@@ -1,0 +1,29 @@
+# Default node parameter configurations
+
+denoising:
+  default_extent: 5
+  default_nthreads: 4
+  default_output_noise_map: true
+
+eddy_correction:
+  default_niter: 5
+  default_fwhm: 10.0
+  default_slice_to_volume: false
+  default_outlier_replacement: true
+
+bias_correction:
+  default_shrink_factor: 4
+  default_convergence: "[50x50x50x50,0.0000001]"
+  default_spline_distance: 200
+
+tensor_fitting:
+  default_tool: "FSL"
+  default_mask_threshold: 0.3
+
+tractography:
+  default_tool: "MRtrix3"
+  default_algorithm: "probabilistic"
+  default_num_streamlines: 10000000
+  default_step_size: 0.5
+  default_max_length: 200.0
+  default_min_length: 10.0

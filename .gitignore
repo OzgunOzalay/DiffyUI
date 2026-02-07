@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# ComfyUI
+ComfyUI/
+models/
+output/
+input/
+.python-embed/
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data (BIDS datasets - don't commit actual data)
+data/
+bids_data/
+*.nii.gz
+*.nii
+*.mif
+*.tck
+*.trk
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
