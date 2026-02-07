@@ -156,21 +156,38 @@ class Brain3DViewerNode:
                 s = min(s + 1, 8)
                 print(f"[Brain 3D Viewer] Mesh too large ({n_faces} faces), re-running with subsample {s}", flush=True)
 
+            # Grab per-vertex normals from marching cubes for smooth shading
+            normals = np.asarray(result[2], dtype=np.float64)
+
+            # Transform normals to world coords (inverse-transpose of 3x3 affine)
+            if use_world_coords and hasattr(img, 'affine') and img.affine is not None:
+                normal_mat = np.linalg.inv(img.affine[:3, :3]).T
+                normals = (normal_mat @ normals.T).T
+
             # Sanitize: NaN/Inf break Meshlab and many viewers
             bad = ~np.isfinite(verts)
             if np.any(bad):
                 verts = np.where(bad, 0.0, verts)
                 print(f"[Brain 3D Viewer] Replaced non-finite vertex values", flush=True)
 
-            # Normalize to unit scale so viewers don't crash on huge world coords (e.g. mm)
+            # Center mesh at origin then normalize to unit scale
             n_verts = len(verts)
+            bbox_center = (verts.min(axis=0) + verts.max(axis=0)) / 2.0
+            verts = verts - bbox_center
             extent = np.abs(verts).max()
             if extent > 1e-6:
                 verts = verts / extent
+
             # Reorient for Y-up viewers (ComfyUI, Three.js, etc.): NIfTI RAS has Z=superior
             if "Y-up" in viewer_up:
                 # RAS (X=right, Y=anterior, Z=superior) -> Y-up (X=right, Y=up, Z=back): (x,y,z)->(x, z, -y)
                 verts = np.column_stack([verts[:, 0], verts[:, 2], -verts[:, 1]])
+                normals = np.column_stack([normals[:, 0], normals[:, 2], -normals[:, 1]])
+
+            # Re-normalize normals to unit length
+            norms = np.linalg.norm(normals, axis=1, keepdims=True)
+            normals = normals / np.maximum(norms, 1e-10)
+
             n_faces = len(faces)
 
             if HAS_FOLDER_PATHS and folder_paths:
@@ -239,12 +256,32 @@ class Brain3DViewerNode:
                     return {"ui": {"files": []}, "result": (err,)}
                 if n_valid < n_faces:
                     print(f"[Brain 3D Viewer] Skipped {n_faces - n_valid} invalid/degenerate faces", flush=True)
+
+                # Write companion MTL file with brain cortex material.
+                # Use a fixed name so both the unique output OBJ and the
+                # preview copy in input/3d can reference the same MTL.
+                mtl_name = "brain_cortex.mtl"
+                mtl_path = out_dir / mtl_name
+                with open(mtl_path, "w", encoding="utf-8", newline="\n") as mf:
+                    mf.write("# Brain cortex material\n")
+                    mf.write("newmtl brain_cortex\n")
+                    mf.write("Ka 0.18 0.12 0.12\n")   # warm ambient
+                    mf.write("Kd 0.82 0.68 0.65\n")   # pinkish-gray cortex
+                    mf.write("Ks 0.25 0.22 0.22\n")   # subtle wet-surface specular
+                    mf.write("Ns 30.0\n")              # moderate shininess
+                    mf.write("d 1.0\n")                # fully opaque
+                    mf.write("illum 2\n")              # diffuse + specular
+
                 with open(out_path, "w", encoding="utf-8", newline="\n") as f:
                     f.write("# OBJ mesh from Brain 3D Viewer\n")
+                    f.write(f"mtllib {mtl_name}\n")
+                    f.write("usemtl brain_cortex\n")
                     for i in range(n_verts):
                         f.write(f"v {verts[i, 0]:.6f} {verts[i, 1]:.6f} {verts[i, 2]:.6f}\n")
+                    for i in range(n_verts):
+                        f.write(f"vn {normals[i, 0]:.6f} {normals[i, 1]:.6f} {normals[i, 2]:.6f}\n")
                     for (a, b, c) in valid_faces:
-                        f.write(f"f {a} {b} {c}\n")
+                        f.write(f"f {a}//{a} {b}//{b} {c}//{c}\n")
                     f.write("\n")
 
             # Preview 3D & Animation frontend hardcodes loadFolder='output'
@@ -261,6 +298,9 @@ class Brain3DViewerNode:
                 preview_name = f"brain_mesh_preview.{fmt}"
                 preview_path_3d = input_3d / preview_name
                 shutil.copy2(out_path, preview_path_3d)
+                # Copy companion MTL so Load 3D dropdown also gets the material
+                if fmt == "obj":
+                    shutil.copy2(mtl_path, input_3d / mtl_name)
                 # Return path relative to output root so Preview 3D can fetch it
                 mesh_path_str = f"3d/{out_name}"
                 print(f"[Brain 3D Viewer] Mesh saved: {out_path}")
