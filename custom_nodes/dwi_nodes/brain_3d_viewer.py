@@ -247,21 +247,25 @@ class Brain3DViewerNode:
                         f.write(f"f {a} {b} {c}\n")
                     f.write("\n")
 
-            # Copy to input/3d (for Load 3D dropdown) and input/ (for /view which uses basename)
+            # Preview 3D & Animation frontend hardcodes loadFolder='output'
+            # and constructs: /view?filename=<name>&type=output&subfolder=<sub>
+            # So the mesh_path must be a clean path relative to ComfyUI's
+            # output root (e.g. "3d/brain_mesh_xxx.obj"), NOT an annotated
+            # path like "file.obj[input]" which the frontend cannot parse.
             if HAS_FOLDER_PATHS and folder_paths:
                 import shutil
+                # Also copy to input/3d so the file appears in the Load 3D dropdown
                 input_dir = Path(folder_paths.get_input_directory())
                 input_3d = input_dir / "3d"
                 input_3d.mkdir(parents=True, exist_ok=True)
                 preview_name = f"brain_mesh_preview.{fmt}"
                 preview_path_3d = input_3d / preview_name
-                preview_path_root = input_dir / preview_name
                 shutil.copy2(out_path, preview_path_3d)
-                shutil.copy2(out_path, preview_path_root)
-                # [input] so /view resolves to input dir (no space so URL/frontend don't break)
-                mesh_path_str = f"{preview_name}[input]"
+                # Return path relative to output root so Preview 3D can fetch it
+                mesh_path_str = f"3d/{out_name}"
                 print(f"[Brain 3D Viewer] Mesh saved: {out_path}")
-                print(f"[Brain 3D Viewer] Copied to {preview_path_3d} and {preview_path_root} for Preview 3D.")
+                print(f"[Brain 3D Viewer] Copied to {preview_path_3d} for Load 3D dropdown.")
+                print(f"[Brain 3D Viewer] Preview 3D path: {mesh_path_str} (type=output)")
             else:
                 mesh_path_str = str(out_path)
 
