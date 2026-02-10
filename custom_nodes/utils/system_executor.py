@@ -29,9 +29,9 @@ class SystemExecutor:
     def _check_tool_available(self):
         """Check if the tool is available in the system PATH."""
         tool_commands = {
-            "fsl": ["bet", "fslroi", "eddy"],
-            "mrtrix": ["mrconvert", "dwidenoise", "dwifslpreproc"],
-            "mrtrix3": ["mrconvert", "dwidenoise", "dwifslpreproc"],
+            "fsl": ["bet", "fslroi", "eddy", "fslstats"],
+            "mrtrix": ["mrconvert", "dwidenoise", "dwifslpreproc", "mrinfo"],
+            "mrtrix3": ["mrconvert", "dwidenoise", "dwifslpreproc", "mrinfo"],
             "ants": ["N4BiasFieldCorrection", "antsRegistration"]
         }
         

@@ -125,6 +125,9 @@ Converts a brain NIfTI (e.g. from DWI Brain Mask) into a 3D mesh (OBJ or STL) us
 
 **Brain orientation looks tilted:** NIfTI uses RAS (Z = superior); most 3D UIs use **Y-up**. Use the node option **viewer_up: "Y-up (ComfyUI / standard 3D)"** (default) so the brain is exported right-way-up. You can also try the viewer’s **Up Direction** (e.g. Y, Z, or Original) if you keep **viewer_up: "RAS (no change)"**.
 
+### NIfTI Stats
+Runs **fslstats** (FSL) or **mrinfo** (MRtrix) on an input NIfTI image and outputs **structured text** with common metrics and stats (e.g. mean, std, min, max, volume, dimensions). The output is LLM-friendly (markdown-style key-value) and can be connected to **Preview as Text** (utils category) to view, or fed to an LLM downstream. Input: **image** (path to .nii or .nii.gz). Optional: **tool** (fslstats or mrinfo).
+
 ## Usage
 
 ### Basic Workflow

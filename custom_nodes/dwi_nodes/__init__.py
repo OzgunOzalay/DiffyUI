@@ -16,6 +16,7 @@ from .tensor_fitting import DWITensorFittingNode
 from .tractography import DWITractographyNode
 from .nifti_preview import NIfTIPreviewNode
 from .brain_3d_viewer import Brain3DViewerNode
+from .nifti_stats import NIfTIStatsNode
 
 NODE_CLASS_MAPPINGS = {
     "BIDSLoader": BIDSLoaderNode,
@@ -32,6 +33,7 @@ NODE_CLASS_MAPPINGS = {
     "DWITractography": DWITractographyNode,
     "NIfTIPreview": NIfTIPreviewNode,
     "Brain3DViewer": Brain3DViewerNode,
+    "NIfTIStats": NIfTIStatsNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -49,6 +51,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "DWITractography": "DWI Tractography",
     "NIfTIPreview": "NIfTI Preview",
     "Brain3DViewer": "Brain 3D Viewer",
+    "NIfTIStats": "NIfTI Stats",
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
