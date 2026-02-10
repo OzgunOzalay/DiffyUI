@@ -9,6 +9,8 @@ echo "=== Setting up ComfyUI locally ==="
 if [ ! -d "ComfyUI" ]; then
     echo "Cloning ComfyUI repository..."
     git clone https://github.com/comfyanonymous/ComfyUI.git
+    echo "Removing ComfyUI .git (single project repo — no nested repos)..."
+    rm -rf ComfyUI/.git
 else
     echo "ComfyUI directory already exists, skipping clone..."
 fi
