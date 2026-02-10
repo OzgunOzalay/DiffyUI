@@ -1,0 +1,67 @@
+{
+  "description": "Example workflow showing DeepSeek QC Supervisor usage",
+  "workflow": {
+    "nodes": [
+      {
+        "id": 1,
+        "type": "NIfTIStats",
+        "pos": [100, 100],
+        "title": "Extract Image Stats",
+        "inputs": {
+          "image": "/path/to/your/image.nii.gz",
+          "tool": "fslstats"
+        }
+      },
+      {
+        "id": 2,
+        "type": "DeepSeekQCSupervisor",
+        "pos": [400, 100],
+        "title": "QC Analysis",
+        "inputs": {
+          "stats_text": "{{ connect from NIfTIStats.stats }}",
+          "rules_json": "{\"mean\": [100, 1000], \"std\": [0, 500], \"volume_mm3\": [800000, 2000000]}",
+          "group_context": "Cohort mean intensity: 450 ± 50\nCohort volume: 1.2M ± 0.1M mm³",
+          "ollama_model": "deepseek-r1:7b",
+          "system_prompt": "You are a Senior Neuroimaging Analyst...",
+          "ollama_url": "http://localhost:11434",
+          "temperature": 0.1,
+          "timeout": 60
+        }
+      }
+    ],
+    "connections": [
+      {
+        "from": [1, 0],
+        "to": [2, 0]
+      }
+    ]
+  },
+  "usage_notes": [
+    "1. Ensure Ollama is running with DeepSeek-R1 model installed",
+    "2. Connect NIfTI Stats node output to DeepSeek QC Supervisor stats_text input",
+    "3. Configure validation rules in rules_json as a JSON object",
+    "4. Optionally provide group_context for cohort-based outlier detection",
+    "5. The node outputs:",
+    "   - qc_status: PASS/WARN/FAIL (for conditional routing)",
+    "   - report_markdown: Formatted report with emoji indicators",
+    "   - structured_data: JSON with all findings (machine-readable)"
+  ],
+  "example_rules": {
+    "structural_t1": {
+      "mean_intensity": [200, 600],
+      "std": [50, 300],
+      "volume_mm3": [1000000, 1800000],
+      "dimensions": [256, 256, 176]
+    },
+    "dwi_b0": {
+      "mean_nonzero": [300, 1200],
+      "std_nonzero": [100, 500],
+      "volume_nonzero_mm3": [900000, 1600000]
+    },
+    "dwi_diffusion": {
+      "shells": [0, 1000, 2000],
+      "directions_per_shell": [6, 30, 60],
+      "voxel_size": [2, 2, 2]
+    }
+  }
+}
