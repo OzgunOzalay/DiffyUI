@@ -5,6 +5,7 @@ scikit-image>=0.19.0
 pybids>=0.16.0
 matplotlib>=3.5.0
 Pillow>=9.0.0
+requests>=2.28.0
 
 # Optional but recommended
 pydantic>=2.0.0

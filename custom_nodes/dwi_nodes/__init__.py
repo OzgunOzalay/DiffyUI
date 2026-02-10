@@ -17,6 +17,7 @@ from .tractography import DWITractographyNode
 from .nifti_preview import NIfTIPreviewNode
 from .brain_3d_viewer import Brain3DViewerNode
 from .nifti_stats import NIfTIStatsNode
+from .deepseek_qc_supervisor import DeepSeekQCSupervisorNode
 
 NODE_CLASS_MAPPINGS = {
     "BIDSLoader": BIDSLoaderNode,
@@ -34,6 +35,7 @@ NODE_CLASS_MAPPINGS = {
     "NIfTIPreview": NIfTIPreviewNode,
     "Brain3DViewer": Brain3DViewerNode,
     "NIfTIStats": NIfTIStatsNode,
+    "DeepSeekQCSupervisor": DeepSeekQCSupervisorNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -52,6 +54,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "NIfTIPreview": "NIfTI Preview",
     "Brain3DViewer": "Brain 3D Viewer",
     "NIfTIStats": "NIfTI Stats",
+    "DeepSeekQCSupervisor": "DeepSeek QC Supervisor",
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
