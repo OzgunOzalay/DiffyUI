@@ -93,24 +93,7 @@ class DWIBiasCorrectionNode:
                 derivatives_path = bids.get_derivatives_path(str(subject_id).strip(), "diffyui")
                 output_dir = derivatives_path / "dwi" if "dwi" in str(input_path) else derivatives_path / "anat"
             else:
-                path_parts = input_path.parts
-                inf_subject_id = None
-                inf_bids_root = None
-                if "derivatives" in path_parts:
-                    deriv_idx = path_parts.index("derivatives")
-                    if deriv_idx > 0:
-                        inf_bids_root = Path(*path_parts[:deriv_idx])
-                        for i in range(deriv_idx - 1, -1, -1):
-                            if path_parts[i].startswith("sub-"):
-                                inf_subject_id = path_parts[i]
-                                break
-                else:
-                    for i, part in enumerate(path_parts):
-                        if part.startswith("sub-"):
-                            inf_subject_id = part
-                            if i > 0:
-                                inf_bids_root = Path(*path_parts[:i])
-                            break
+                inf_bids_root, inf_subject_id = BIDSHandler.infer_bids_paths(input_path)
                 if inf_subject_id and inf_bids_root:
                     bids = BIDSHandler(str(inf_bids_root))
                     derivatives_path = bids.get_derivatives_path(inf_subject_id, "diffyui")
@@ -129,11 +112,12 @@ class DWIBiasCorrectionNode:
             executor = get_executor("ants")
             
             # Prepare N4BiasFieldCorrection command
+            # Use bracket notation for -o to output both corrected image and bias field
             n4_cmd = [
                 "N4BiasFieldCorrection",
                 "-d", "3",  # 3D image
                 "-i", str(input_path),
-                "-o", str(corrected_output),
+                "-o", f"[{corrected_output},{bias_field_output}]",
                 "-s", str(shrink_factor),
                 "-c", convergence,
                 "-b", f"[{spline_distance}]"
@@ -146,11 +130,7 @@ class DWIBiasCorrectionNode:
             
             if return_code != 0:
                 raise RuntimeError(f"N4BiasFieldCorrection failed: {stderr}")
-            
-            # Extract bias field (N4 outputs both corrected image and bias field)
-            # The bias field is typically saved with a suffix
-            bias_field_path = corrected_output.parent / f"{input_stem}_bias_field.nii.gz"
-            
+
             # Write metadata
             metadata = {
                 "ProcessingStep": "bias_correction",
@@ -161,7 +141,7 @@ class DWIBiasCorrectionNode:
             }
             bids.write_derivative_file(corrected_output, input_path, metadata)
             
-            return (str(corrected_output), str(bias_field_path))
+            return (str(corrected_output), str(bias_field_output))
         
         except Exception as e:
             return (f"Error: {str(e)}", "")

@@ -103,25 +103,9 @@ class ExtractB0Node:
             
             print(f"[Extract B0] Input DWI file: {input_dwi}")
             
-            # Infer BIDS structure from input file path (same logic as Topup/Eddy nodes)
-            path_parts = input_dwi.parts
-            subject_id = None
-            bids_root = None
-            if "derivatives" in path_parts:
-                deriv_idx = path_parts.index("derivatives")
-                if deriv_idx > 0:
-                    bids_root = Path(*path_parts[:deriv_idx])
-                    for i in range(deriv_idx - 1, -1, -1):
-                        if path_parts[i].startswith("sub-"):
-                            subject_id = path_parts[i]
-                            break
-            else:
-                for i, part in enumerate(path_parts):
-                    if part.startswith("sub-"):
-                        subject_id = part
-                        if i > 0:
-                            bids_root = Path(*path_parts[:i])
-                        break
+            # Infer BIDS structure from input file path
+            from ._import_utils import BIDSHandler
+            bids_root, subject_id = BIDSHandler.infer_bids_paths(input_dwi)
             if not subject_id or not bids_root:
                 output_dir = input_dwi.parent / "B0"
             else:

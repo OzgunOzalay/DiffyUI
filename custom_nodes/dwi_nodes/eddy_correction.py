@@ -83,8 +83,8 @@ class DWIEddyCorrectionNode:
             }
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("corrected_dwi",)
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("corrected_dwi", "rotated_bvecs")
     FUNCTION = "eddy_correct"
     CATEGORY = "DWI"
     DESCRIPTION = "Eddy current and motion correction using FSL eddy (prefers CUDA) with topup. Automatically frees GPU memory before running eddy_cuda for optimal performance. Processes AP-phase DWI only (single file); comma-separated inputs use first path only. Outputs to BIDS derivatives (e.g. derivatives/diffyui/sub-XX/dwi/Eddy/)."
@@ -158,11 +158,11 @@ class DWIEddyCorrectionNode:
                 if not path or not path.exists():
                     error_msg = f"{name} file not found: {path}"
                     print(f"[DWI Eddy] ERROR: {error_msg}")
-                    return (f"Error: {error_msg}",)
+                    return (f"Error: {error_msg}", "")
                 if not path.is_file():
                     error_msg = f"{name} path is not a file: {path}"
                     print(f"[DWI Eddy] ERROR: {error_msg}")
-                    return (f"Error: {error_msg}",)
+                    return (f"Error: {error_msg}", "")
 
             print("[DWI Eddy] All required input files validated.")
 
@@ -175,26 +175,8 @@ class DWIEddyCorrectionNode:
                 topup_prefix = str(topup_field_path)
             print(f"[DWI Eddy] Topup prefix: {topup_prefix}")
 
-            # BIDS inference from dwi_file (same logic as Topup node)
-            path_parts = dwi_path.parts
-            subject_id = None
-            bids_root = None
-            if "derivatives" in path_parts:
-                deriv_idx = path_parts.index("derivatives")
-                if deriv_idx > 0:
-                    bids_root = Path(*path_parts[:deriv_idx])
-                    for i in range(deriv_idx - 1, -1, -1):
-                        if path_parts[i].startswith("sub-"):
-                            subject_id = path_parts[i]
-                            break
-            else:
-                for i, part in enumerate(path_parts):
-                    if part.startswith("sub-"):
-                        subject_id = part
-                        if i > 0:
-                            bids_root = Path(*path_parts[:i])
-                        break
-
+            # BIDS inference from dwi_file
+            bids_root, subject_id = BIDSHandler.infer_bids_paths(dwi_path)
             if not subject_id or not bids_root:
                 output_dir = dwi_path.parent / "Eddy"
             else:
@@ -267,7 +249,7 @@ class DWIEddyCorrectionNode:
             if not eddy_bin:
                 error_msg = "No eddy binary found (tried eddy_cuda*, eddy_cpu, eddy_openmp, eddy in PATH and FSLDIR/bin)"
                 print(f"[DWI Eddy] ERROR: {error_msg}")
-                return (f"Error: {error_msg}",)
+                return (f"Error: {error_msg}", "")
 
             print(f"[DWI Eddy] Using eddy binary: {eddy_bin}")
 
@@ -358,22 +340,30 @@ class DWIEddyCorrectionNode:
                 if stdout:
                     error_msg += f" stdout: {stdout}"
                 print(f"[DWI Eddy] ERROR: {error_msg}")
-                return (f"Error: {error_msg}",)
+                return (f"Error: {error_msg}", "")
 
             corrected_dwi = Path(str(eddy_out_prefix) + ".nii.gz")
             if not corrected_dwi.exists():
                 error_msg = f"Eddy output not found: {corrected_dwi}"
                 print(f"[DWI Eddy] ERROR: {error_msg}")
-                return (f"Error: {error_msg}",)
+                return (f"Error: {error_msg}", "")
+
+            # FSL eddy outputs rotated bvecs (critical for downstream DTIfit)
+            rotated_bvecs = Path(str(eddy_out_prefix) + ".eddy_rotated_bvecs")
+            rotated_bvecs_str = str(rotated_bvecs) if rotated_bvecs.exists() else ""
+            if rotated_bvecs_str:
+                print(f"[DWI Eddy] Rotated bvecs: {rotated_bvecs}")
+            else:
+                print("[DWI Eddy] Warning: Rotated bvecs file not found")
 
             print("[DWI Eddy] Eddy correction completed successfully.")
             print(f"[DWI Eddy] Corrected DWI: {corrected_dwi}")
             print("[DWI Eddy] ===== CORRECTION COMPLETE =====")
-            return (str(corrected_dwi),)
+            return (str(corrected_dwi), rotated_bvecs_str)
 
         except Exception as e:
             import traceback
             error_msg = f"Error: {str(e)}"
             print(f"[DWI Eddy] {error_msg}")
             print(f"[DWI Eddy] Traceback: {traceback.format_exc()}")
-            return (error_msg,)
+            return (error_msg, "")

@@ -210,30 +210,7 @@ class DWITopupCorrectionNode:
             print(f"[DWI Topup] All input files validated")
             
             # Infer BIDS structure from input file path for output location
-            path_parts = ap_dwi_path.parts
-            subject_id = None
-            bids_root = None
-            
-            # Check if already in derivatives directory
-            if "derivatives" in path_parts:
-                # File is already in derivatives, use parent of derivatives as BIDS root
-                deriv_idx = path_parts.index("derivatives")
-                if deriv_idx > 0:
-                    bids_root = Path(*path_parts[:deriv_idx])
-                    # Find subject_id before derivatives
-                    for i in range(deriv_idx - 1, -1, -1):
-                        if path_parts[i].startswith("sub-"):
-                            subject_id = path_parts[i]
-                            break
-            else:
-                # Find subject_id in path (look for sub-* pattern)
-                for i, part in enumerate(path_parts):
-                    if part.startswith("sub-"):
-                        subject_id = part
-                        if i > 0:
-                            bids_root = Path(*path_parts[:i])
-                        break
-            
+            bids_root, subject_id = BIDSHandler.infer_bids_paths(ap_dwi_path)
             if not subject_id or not bids_root:
                 # Fallback: use parent directory structure
                 output_dir = ap_dwi_path.parent / "Topup"
