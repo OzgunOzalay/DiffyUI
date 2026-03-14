@@ -29,7 +29,7 @@ pip install -r requirements.txt
 
 # Install additional dependencies for DWI nodes (including Brain 3D Viewer)
 echo "Installing DWI node dependencies..."
-pip install nibabel>=5.0.0 numpy>=1.24.0 pybids>=0.16.0 matplotlib Pillow "scikit-image>=0.19.0"
+pip install "nibabel>=5.0.0" "numpy>=1.24.0" "pybids>=0.16.0" matplotlib Pillow "scikit-image>=0.19.0"
 
 # Create symlink to custom nodes
 cd ..
