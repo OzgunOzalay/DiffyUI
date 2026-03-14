@@ -53,6 +53,10 @@ The system consists of:
    cd ComfyUI
    python main.py --listen 0.0.0.0 --port 8188
    ```
+   Or use the DiffyUI startup script for a DWI-focused UI (no image/video generation nodes):
+   ```bash
+   ./run_diffyui.sh
+   ```
 
 4. **Access ComfyUI**:
    Open your browser and navigate to `http://localhost:8188`
@@ -60,11 +64,28 @@ The system consists of:
 5. **Verify custom nodes are loaded**:
    The DWI nodes should appear in the node menu under the "DWI" category.
 
+### Running DiffyUI without image/video generation
+
+To run DiffyUI with only DWI-related and essential nodes (no ComfyUI image/video generation):
+
+- **Recommended:** Start with the provided script:
+  ```bash
+  ./run_diffyui.sh
+  ```
+  This runs ComfyUI with `--disable-api-nodes` and `--diffyui-only`: API nodes (Sora, Runway, etc.) are not loaded, built-in extras are limited to Preview as Text and string/utils, and core diffusion nodes (samplers, checkpoint/VAE/CLIP loaders, latent/conditioning) are removed. Load Image, Save Image, Preview Image, and basic image passthrough nodes are kept for NIfTI preview and workflows.
+
+- **Manual:** From the `ComfyUI` directory:
+  ```bash
+  python main.py --listen 0.0.0.0 --port 8188 --disable-api-nodes --diffyui-only
+  ```
+  Use `--disable-api-nodes` alone if you only want to disable API nodes and keep the rest of the UI unchanged.
+
 ## Project Structure
 
 ```
 DiffyUI/
 ├── setup_local.sh              # Local installation script
+├── run_diffyui.sh              # Start ComfyUI in DWI-only mode (no image/video gen nodes)
 ├── requirements.txt            # Python dependencies
 ├── custom_nodes/               # ComfyUI custom nodes directory
 │   ├── dwi_nodes/              # DWI processing nodes
@@ -76,8 +97,10 @@ DiffyUI/
 │   │   ├── denoising.py        # Denoising node (MRtrix3)
 │   │   ├── eddy_correction.py  # Eddy correction (FSL)
 │   │   ├── bias_correction.py  # Bias correction (ANTs)
-│   │   ├── tensor_fitting.py   # Tensor fitting
+│   │   ├── tensor_fitting.py   # Tensor fitting (legacy)
+│   │   ├── dtifit.py           # DTI fitting (FSL dtifit - comprehensive)
 │   │   ├── tractography.py     # Tractography
+│   │   ├── tbss_*.py           # TBSS pipeline nodes (5 nodes)
 │   │   └── nifti_preview.py    # NIfTI file preview
 │   └── utils/                  # Utility modules
 │       ├── bids_handler.py     # BIDS format handling
@@ -109,6 +132,9 @@ Correct bias field using ANTs N4BiasFieldCorrection.
 
 ### DWI Tensor Fitting
 Fit diffusion tensor model (DTI) to DWI data using FSL or MRtrix3.
+
+### DTIfit (FSL)
+Comprehensive FSL dtifit wrapper with all standard outputs (FA, MD, MO, L1/L2/L3, V1/V2/V3, S0). Supports weighted least squares, tensor saving, SSE output, and gradient nonlinearity correction. See `custom_nodes/dwi_nodes/DTIFIT_NODE_GUIDE.md` for details.
 
 ### DWI Tractography
 Perform fiber tracking (tractography) using MRtrix3 or FSL.
@@ -211,6 +237,21 @@ You can:
 - Verify input files exist and are in correct format
 - Check BIDS structure is valid
 - Ensure file permissions allow reading/writing
+
+### Eddy correction performance
+- **GPU acceleration**: The Eddy correction node automatically uses `eddy_cuda` (GPU) when available, falling back to `eddy_cpu` if not found.
+- **GPU memory management**: Before running `eddy_cuda`, the node automatically frees GPU memory by unloading ComfyUI models. This prevents GPU contention between ComfyUI's PyTorch backend and FSL's CUDA processes.
+- **Performance optimizations**: The node enables FSL eddy performance flags for CUDA:
+  - `--dont_sep_offs_move`: Faster processing with minimal quality impact
+  - `--nvoxhp=1000`: Reduced hyperparameter voxels (faster, good for most data)
+  - `--dont_peas`: Skips post-eddy alignment for single-shell data
+  - Multi-threaded I/O: Sets `OMP_NUM_THREADS=4` for faster file operations
+- **Normal behavior**: After initial GPU compute, eddy becomes I/O bound (disk reading/writing). You'll see GPU usage drop to <10% and single CPU core active - this is normal FSL behavior during the I/O phase.
+- **Further optimization**: For fastest performance, consider:
+  - Using SSD/NVMe storage for output directory
+  - Using tmpfs/RAM disk: `sudo mount -t tmpfs -o size=50G tmpfs /path/to/tmpdir` (adjust size based on RAM)
+  - Ensuring no other disk-intensive processes are running
+- **Check binary used**: The node logs which eddy binary it selected. Look for `[DWI Eddy] Using eddy binary:` in the console.
 
 ### FSL environment issues
 - The executor automatically sets up FSL environment variables

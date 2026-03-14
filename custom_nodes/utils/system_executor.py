@@ -90,6 +90,17 @@ class SystemExecutor:
                     current_path = env.get("PATH", "")
                     if str(fsl_bin) not in current_path:
                         env["PATH"] = f"{fsl_bin}:{current_path}"
+                
+                # Performance optimizations for FSL I/O (especially eddy_cuda)
+                # OMP_NUM_THREADS: Control OpenMP threads for I/O operations
+                if "OMP_NUM_THREADS" not in env:
+                    env["OMP_NUM_THREADS"] = "4"  # Use 4 threads for file I/O parallelization
+                # OPENBLAS_NUM_THREADS: Control BLAS threading (if FSL uses OpenBLAS)
+                if "OPENBLAS_NUM_THREADS" not in env:
+                    env["OPENBLAS_NUM_THREADS"] = "4"
+                # FSL_LOAD_NIFTI_EXTENSIONS: Disable loading all extensions for faster I/O
+                if "FSL_LOAD_NIFTI_EXTENSIONS" not in env:
+                    env["FSL_LOAD_NIFTI_EXTENSIONS"] = "0"
         
         try:
             # Execute command
