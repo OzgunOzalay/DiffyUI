@@ -115,26 +115,8 @@ class DTIfitNode:
             print(f"[DWI DTIfit] Bvecs: {bvec_path}")
             print(f"[DWI DTIfit] Bvals: {bval_path}")
             
-            # Determine output directory (same as other nodes: infer from DWI path or use derivatives)
-            path_parts = dwi_path.parts
-            subject_id = None
-            bids_root = None
-            if "derivatives" in path_parts:
-                deriv_idx = path_parts.index("derivatives")
-                if deriv_idx > 0:
-                    bids_root = Path(*path_parts[:deriv_idx])
-                    for i in range(len(path_parts) - 1, -1, -1):
-                        if path_parts[i].startswith("sub-"):
-                            subject_id = path_parts[i]
-                            break
-            else:
-                for i, part in enumerate(path_parts):
-                    if part.startswith("sub-"):
-                        subject_id = part
-                        if i > 0:
-                            bids_root = Path(*path_parts[:i])
-                        break
-            
+            # Determine output directory using centralized BIDS path inference
+            bids_root, subject_id = BIDSHandler.infer_bids_paths(dwi_path)
             if not subject_id or not bids_root:
                 output_dir = dwi_path.parent / "DTI"
             else:

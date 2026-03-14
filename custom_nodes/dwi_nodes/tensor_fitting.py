@@ -85,24 +85,7 @@ class DWITensorFittingNode:
                 derivatives_path = bids.get_derivatives_path(str(subject_id).strip(), "diffyui")
                 output_dir = derivatives_path / "dwi"
             else:
-                path_parts = input_dwi.parts
-                inf_subject_id = None
-                inf_bids_root = None
-                if "derivatives" in path_parts:
-                    deriv_idx = path_parts.index("derivatives")
-                    if deriv_idx > 0:
-                        inf_bids_root = Path(*path_parts[:deriv_idx])
-                        for i in range(deriv_idx - 1, -1, -1):
-                            if path_parts[i].startswith("sub-"):
-                                inf_subject_id = path_parts[i]
-                                break
-                else:
-                    for i, part in enumerate(path_parts):
-                        if part.startswith("sub-"):
-                            inf_subject_id = part
-                            if i > 0:
-                                inf_bids_root = Path(*path_parts[:i])
-                            break
+                inf_bids_root, inf_subject_id = BIDSHandler.infer_bids_paths(input_dwi)
                 if inf_subject_id and inf_bids_root:
                     bids = BIDSHandler(str(inf_bids_root))
                     derivatives_path = bids.get_derivatives_path(inf_subject_id, "diffyui")
@@ -149,10 +132,9 @@ class DWITensorFittingNode:
             "-o", str(base_output),
             "-b", str(bval_file),
             "-r", str(bvec_file),
-            "-m", mask_file if mask_file and Path(mask_file).exists() else "",
             "--sse"
         ]
-        
+
         if mask_file and Path(mask_file).exists():
             dtifit_cmd.extend(["-m", mask_file])
         

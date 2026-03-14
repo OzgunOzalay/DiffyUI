@@ -249,6 +249,46 @@ class BIDSHandler:
                 return [[x[i], y[i], z[i]] for i in range(len(x))]
         return []
     
+    @staticmethod
+    def infer_bids_paths(input_file: Path) -> tuple:
+        """
+        Infer BIDS root and subject ID from an input file path.
+
+        Handles both raw BIDS paths and derivatives paths:
+          - Raw: /data/ALC/sub-01/dwi/file.nii.gz
+          - Derivatives: /data/ALC/derivatives/diffyui/sub-01/dwi/file.nii.gz
+
+        Args:
+            input_file: Path to the input file
+
+        Returns:
+            Tuple of (bids_root: Path or None, subject_id: str or None)
+        """
+        path_parts = input_file.parts
+        subject_id = None
+        bids_root = None
+
+        if "derivatives" in path_parts:
+            deriv_idx = path_parts.index("derivatives")
+            if deriv_idx > 0:
+                bids_root = Path(*path_parts[:deriv_idx])
+                # Search AFTER derivatives for subject ID
+                # BIDS derivatives structure: .../derivatives/pipeline/sub-XX/...
+                for i in range(deriv_idx + 1, len(path_parts)):
+                    if path_parts[i].startswith("sub-"):
+                        subject_id = path_parts[i]
+                        break
+        else:
+            # Raw BIDS: search for sub-* in path
+            for i, part in enumerate(path_parts):
+                if part.startswith("sub-"):
+                    subject_id = part
+                    if i > 0:
+                        bids_root = Path(*path_parts[:i])
+                    break
+
+        return (bids_root, subject_id)
+
     def get_derivatives_path(self, subject_id: str, pipeline: str = "diffyui") -> Path:
         """
         Get path for BIDS derivatives directory.
