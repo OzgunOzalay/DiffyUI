@@ -255,8 +255,9 @@ class BIDSHandler:
         Infer BIDS root and subject ID from an input file path.
 
         Handles both raw BIDS paths and derivatives paths:
-          - Raw: /data/ALC/sub-01/dwi/file.nii.gz
-          - Derivatives: /data/ALC/derivatives/diffyui/sub-01/dwi/file.nii.gz
+          - Raw:        /data/ALC/sub-01/dwi/file.nii.gz
+          - Derivatives (new): /data/ALC/sub-01/derivatives/diffyui/dwi/file.nii.gz
+          - Derivatives (old): /data/ALC/derivatives/diffyui/sub-01/dwi/file.nii.gz
 
         Args:
             input_file: Path to the input file
@@ -270,13 +271,16 @@ class BIDSHandler:
 
         if "derivatives" in path_parts:
             deriv_idx = path_parts.index("derivatives")
-            if deriv_idx > 0:
-                bids_root = Path(*path_parts[:deriv_idx])
-                # Search AFTER derivatives for subject ID
-                # BIDS derivatives structure: .../derivatives/pipeline/sub-XX/...
+            # New structure: sub-XX is the component immediately before "derivatives"
+            if deriv_idx > 0 and path_parts[deriv_idx - 1].startswith("sub-"):
+                subject_id = path_parts[deriv_idx - 1]
+                bids_root = Path(*path_parts[:deriv_idx - 1]) if deriv_idx > 1 else Path("/")
+            else:
+                # Old structure: sub-XX appears somewhere after "derivatives/pipeline/"
                 for i in range(deriv_idx + 1, len(path_parts)):
                     if path_parts[i].startswith("sub-"):
                         subject_id = path_parts[i]
+                        bids_root = Path(*path_parts[:deriv_idx])
                         break
         else:
             # Raw BIDS: search for sub-* in path
@@ -300,8 +304,7 @@ class BIDSHandler:
         Returns:
             Path to derivatives directory
         """
-        derivatives_root = self.bids_root / "derivatives" / pipeline
-        return derivatives_root / subject_id
+        return self.bids_root / subject_id / "derivatives" / pipeline
     
     def write_derivative_file(self, output_file: Path, source_file: Path,
                              metadata: Optional[Dict] = None) -> Path:

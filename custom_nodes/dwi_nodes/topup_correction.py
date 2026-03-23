@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 # Import utils using helper module
-from ._import_utils import get_executor, BIDSHandler
+from ._import_utils import get_executor, BIDSHandler, CacheManager
 
 print("[DWI Topup] ===== MODULE LOADING =====")
 
@@ -63,13 +63,26 @@ class DWITopupCorrectionNode:
     RETURN_NAMES = ("corrected_dwi", "topup_field", "acqp_file")
     FUNCTION = "topup_correct"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "Correct susceptibility-induced distortions using FSL topup with AP/PA B0 pairs."
     
     @classmethod
-    def IS_CHANGED(cls, ap_b0_file, pa_b0_file, ap_dwi_file, **kwargs):
-        """Force re-execution when inputs change."""
-        import time
-        return str(time.time())
+    def IS_CHANGED(cls, ap_b0_file, pa_b0_file, ap_dwi_file,
+                   topup_config="", num_threads=10, apply_method="jac"):
+        """Re-run only when inputs actually change (matches internal cache params)."""
+        try:
+            from ._import_utils import CacheManager
+            params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "ap_b0_file": ap_b0_file, "pa_b0_file": pa_b0_file,
+                    "ap_dwi_file": ap_dwi_file, "num_threads": num_threads,
+                    "apply_method": apply_method,
+                },
+                file_keys=["ap_b0_file", "pa_b0_file", "ap_dwi_file"],
+            )
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
     
     def _read_total_readout_time(self, nifti_file: Path) -> float:
         """
@@ -206,8 +219,19 @@ class DWITopupCorrectionNode:
                     error_msg = f"{name} path is not a file: {path}"
                     print(f"[DWI Topup] ERROR: {error_msg}")
                     return (f"Error: {error_msg}", "", "")
-            
+
             print(f"[DWI Topup] All input files validated")
+
+            # ── Block 1: build param hash ──
+            _params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "ap_b0_file": ap_b0_file, "pa_b0_file": pa_b0_file,
+                    "ap_dwi_file": ap_dwi_file, "num_threads": num_threads,
+                    "apply_method": apply_method,
+                },
+                file_keys=["ap_b0_file", "pa_b0_file", "ap_dwi_file"],
+            )
+            _param_hash = CacheManager.compute_param_hash(_params)
             
             # Infer BIDS structure from input file path for output location
             bids_root, subject_id = BIDSHandler.infer_bids_paths(ap_dwi_path)
@@ -222,7 +246,27 @@ class DWITopupCorrectionNode:
             
             output_dir.mkdir(parents=True, exist_ok=True)
             print(f"[DWI Topup] Output directory: {output_dir}")
-            
+
+            # ── Block 2: pre-compute output paths and check cache ──
+            _ap_dwi_name = ap_dwi_path.name
+            if _ap_dwi_name.endswith('.nii.gz'):
+                _merged_base = _ap_dwi_name[:-7].replace('_dir-AP', '_dir-AP-PA')
+            elif _ap_dwi_name.endswith('.nii'):
+                _merged_base = _ap_dwi_name[:-4].replace('_dir-AP', '_dir-AP-PA')
+            else:
+                _merged_base = ap_dwi_path.stem.replace('_dir-AP', '_dir-AP-PA')
+            _topup_prefix = output_dir / f"{_merged_base}_Topup"
+            _topup_field_pre = _topup_prefix.parent / f"{_topup_prefix.name}_fieldcoef.nii.gz"
+            _ap_dwi_stem = ap_dwi_path.stem.replace(".nii", "")
+            _corrected_dwi_pre = output_dir / f"{_ap_dwi_stem}_topup.nii.gz"
+            _acq_params_pre = output_dir / "acq_params.txt"
+            _cache_path = output_dir / ".diffyui_cache.json"
+            _expected = [str(_corrected_dwi_pre), str(_topup_field_pre), str(_acq_params_pre)]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "DWITopupCorrection", _param_hash, _expected)
+            if _is_hit:
+                print("[DWI Topup] Cache hit — skipping.")
+                return tuple(_cached)
+
             # Get system executor for FSL
             executor = get_executor("fsl")
             
@@ -392,7 +436,11 @@ class DWITopupCorrectionNode:
             print(f"[DWI Topup] Corrected DWI: {corrected_dwi}")
             print(f"[DWI Topup] Topup field: {topup_field}")
             print(f"[DWI Topup] ===== CORRECTION COMPLETE =====")
-            
+
+            # ── Block 3: update cache ──
+            _result_paths = [str(corrected_dwi), str(topup_field), str(acq_params_file)]
+            CacheManager.update_cache(_cache_path, "DWITopupCorrection", _param_hash, _params, _result_paths)
+
             return (str(corrected_dwi), str(topup_field), str(acq_params_file))
         
         except Exception as e:

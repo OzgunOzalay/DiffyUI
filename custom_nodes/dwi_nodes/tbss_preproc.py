@@ -4,7 +4,7 @@ TBSS 1 Preproc Node - FSL tbss_1_preproc: scale/crop FA, create FA/ and origdata
 
 from pathlib import Path
 
-from ._import_utils import get_executor
+from ._import_utils import get_executor, CacheManager
 
 
 class TBSS1PreprocNode:
@@ -34,7 +34,26 @@ class TBSS1PreprocNode:
     RETURN_NAMES = ("project_dir",)
     FUNCTION = "preproc"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "TBSS step 1: preprocess FA images (scale, crop, remove outer slices). Creates FA/ and origdata/ in the project directory."
+
+    @classmethod
+    def IS_CHANGED(cls, fa_directory, pattern="*FA*.nii.gz"):
+        """Re-run only when inputs actually change."""
+        try:
+            from pathlib import Path
+            from ._import_utils import CacheManager
+            proj = Path(fa_directory).expanduser().resolve()
+            fa_list = sorted(proj.glob(pattern)) if proj.exists() else []
+            _proj_stat = proj.stat() if proj.exists() else None
+            params = {
+                "fa_names": sorted(f.name for f in fa_list),
+                "pattern": pattern,
+                "proj_mtime": _proj_stat.st_mtime if _proj_stat else 0.0,
+            }
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
 
     def preproc(self, fa_directory: str, pattern: str = "*FA*.nii.gz"):
         try:
@@ -50,6 +69,23 @@ class TBSS1PreprocNode:
                 print(f"[TBSS 1 Preproc] {err}")
                 return (err,)
 
+            # ── Block 1+2: hash on sorted FA names + proj dir mtime, check cache ──
+            _proj_stat = proj.stat()
+            _params = {
+                "fa_names": sorted(f.name for f in fa_list),
+                "pattern": pattern,
+                "proj_mtime": _proj_stat.st_mtime,
+            }
+            _param_hash = CacheManager.compute_param_hash(_params)
+            _cache_path = proj / ".diffyui_tbss_cache.json"
+            _fa_dir = proj / "FA"
+            _origdata_dir = proj / "origdata"
+            _expected = [str(_fa_dir), str(_origdata_dir)]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "TBSS1Preproc", _param_hash, _expected)
+            if _is_hit:
+                print("[TBSS 1 Preproc] Cache hit — skipping.")
+                return (str(proj),)
+
             executor = get_executor("fsl")
             # FSL tbss_1_preproc expects filenames as arguments (run from project dir)
             cmd = ["tbss_1_preproc"] + [str(f.name) for f in fa_list]
@@ -61,6 +97,10 @@ class TBSS1PreprocNode:
                 return (err,)
 
             print(f"[TBSS 1 Preproc] Success. project_dir={proj}")
+
+            # ── Block 3: update cache ──
+            CacheManager.update_cache(_cache_path, "TBSS1Preproc", _param_hash, _params, _expected)
+
             return (str(proj),)
 
         except Exception as e:

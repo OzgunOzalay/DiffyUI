@@ -10,7 +10,7 @@ from pathlib import Path
 print("[DWI Denoise] ===== MODULE LOADING =====")
 
 # Import utils using helper module
-from ._import_utils import BIDSHandler, get_executor, FileManager
+from ._import_utils import BIDSHandler, get_executor, FileManager, CacheManager
 
 print("[DWI Denoise] Module imports successful")
 
@@ -97,15 +97,27 @@ class DWIDenoiseNode:
     RETURN_NAMES = ("denoised_dwi", "noise_map")
     FUNCTION = "denoise"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "Denoise DWI data using MRtrix3 dwidenoise (Marchenko-Pastur PCA). Must be performed as the first step of the image processing pipeline."
     
     @classmethod
-    def IS_CHANGED(cls, dwi_file, **kwargs):
-        """Force re-execution when inputs change."""
-        import time
-        # Return current timestamp to always re-execute (for debugging)
-        # In production, you could hash the input file instead
-        return str(time.time())
+    def IS_CHANGED(cls, dwi_file, mask_file="", extent=0, output_noise_map=True,
+                   rank_cutoff=0, datatype="auto", estimator="Exp2", nthreads=10,
+                   force_overwrite=False, quiet=False):
+        """Re-run only when inputs actually change (excludes force_overwrite/quiet)."""
+        try:
+            from ._import_utils import CacheManager
+            params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "dwi_file": dwi_file, "mask_file": mask_file, "extent": extent,
+                    "output_noise_map": output_noise_map, "rank_cutoff": rank_cutoff,
+                    "datatype": datatype, "estimator": estimator, "nthreads": nthreads,
+                },
+                file_keys=["dwi_file", "mask_file"],
+            )
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
     
     def denoise(self, dwi_file,
                 mask_file="", extent=0, output_noise_map=True, rank_cutoff=0,
@@ -154,7 +166,18 @@ class DWIDenoiseNode:
                 error_msg = f"Path is not a file: {dwi_file}"
                 print(f"[DWI Denoise] ERROR: {error_msg}")
                 return (error_msg, "")
-            
+
+            # ── Block 1: build param hash ──
+            _params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "dwi_file": dwi_file, "mask_file": mask_file, "extent": extent,
+                    "output_noise_map": output_noise_map, "rank_cutoff": rank_cutoff,
+                    "datatype": datatype, "estimator": estimator, "nthreads": nthreads,
+                },
+                file_keys=["dwi_file", "mask_file"],
+            )
+            _param_hash = CacheManager.compute_param_hash(_params)
+
             # Infer BIDS structure from input file path
             bids_root, subject_id = BIDSHandler.infer_bids_paths(input_dwi)
             if not subject_id or not bids_root:
@@ -170,7 +193,15 @@ class DWIDenoiseNode:
             input_stem = input_dwi.stem.replace(".nii", "")
             denoised_output = output_dir / f"{input_stem}_denoised.nii.gz"
             noise_map_output = output_dir / f"{input_stem}_noise.nii.gz" if output_noise_map else None
-            
+
+            # ── Block 2: check cache ──
+            _cache_path = output_dir / ".diffyui_cache.json"
+            _expected = [str(denoised_output), str(noise_map_output) if noise_map_output else ""]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "DWIDenoise", _param_hash, _expected)
+            if _is_hit:
+                print("[DWI Denoise] Cache hit — skipping.")
+                return tuple(_cached)
+
             # Convert to MIF format for MRtrix3 (if not already)
             # Handle .nii.gz files correctly - replace both .nii and .gz with .mif
             if input_dwi.suffix == ".gz" and input_dwi.stem.endswith(".nii"):
@@ -360,7 +391,11 @@ class DWIDenoiseNode:
             print(f"[DWI Denoise] Denoised DWI: {denoised_output}")
             if noise_map_path:
                 print(f"[DWI Denoise] Noise map: {noise_map_path}")
-            
+
+            # ── Block 3: update cache ──
+            _result_paths = [str(denoised_output), noise_map_path]
+            CacheManager.update_cache(_cache_path, "DWIDenoise", _param_hash, _params, _result_paths)
+
             return (str(denoised_output), noise_map_path)
         
         except Exception as e:

@@ -10,7 +10,7 @@ import shutil
 import multiprocessing
 from pathlib import Path
 
-from ._import_utils import BIDSHandler, get_executor
+from ._import_utils import BIDSHandler, get_executor, CacheManager
 
 print("[DWI Eddy] ===== MODULE LOADING =====")
 
@@ -87,12 +87,32 @@ class DWIEddyCorrectionNode:
     RETURN_NAMES = ("corrected_dwi", "rotated_bvecs")
     FUNCTION = "eddy_correct"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "Eddy current and motion correction using FSL eddy (prefers CUDA) with topup. Automatically frees GPU memory before running eddy_cuda for optimal performance. Processes AP-phase DWI only (single file); comma-separated inputs use first path only. Outputs to BIDS derivatives (e.g. derivatives/diffyui/sub-XX/dwi/Eddy/)."
 
     @classmethod
-    def IS_CHANGED(cls, dwi_file, mask_file, acqp_file, bvec_file, bval_file, topup_field, **kwargs):
-        import time
-        return str(time.time())
+    def IS_CHANGED(cls, dwi_file, mask_file, acqp_file, bvec_file, bval_file, topup_field,
+                   flm="quadratic", data_is_shelled=True, num_threads=10, repol=True):
+        """Re-run only when inputs actually change (matches internal cache params)."""
+        try:
+            from ._import_utils import CacheManager
+            # Normalize comma-separated inputs the same way eddy_correct does
+            def _first(v):
+                s = str(v).strip() if v else ""
+                return s.split(",")[0].strip() if "," in s else s
+            params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "dwi_file": _first(dwi_file), "mask_file": _first(mask_file),
+                    "acqp_file": _first(acqp_file), "bvec_file": _first(bvec_file),
+                    "bval_file": _first(bval_file), "topup_field": _first(topup_field),
+                    "flm": flm, "data_is_shelled": data_is_shelled,
+                    "num_threads": num_threads, "repol": repol,
+                },
+                file_keys=["dwi_file", "mask_file", "acqp_file", "bvec_file", "bval_file", "topup_field"],
+            )
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
 
     def eddy_correct(
         self,
@@ -166,6 +186,22 @@ class DWIEddyCorrectionNode:
 
             print("[DWI Eddy] All required input files validated.")
 
+            # ── Block 1: build param hash (use resolved first paths) ──
+            _params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "dwi_file": str(dwi_path), "mask_file": str(mask_path),
+                    "acqp_file": str(acqp_path), "bvec_file": str(bvec_path),
+                    "bval_file": str(bval_path), "topup_field": str(topup_field_path),
+                    "flm": flm, "data_is_shelled": data_is_shelled,
+                    "num_threads": num_threads, "repol": repol,
+                },
+                file_keys=["dwi_file", "mask_file", "acqp_file", "bvec_file", "bval_file", "topup_field"],
+            )
+            _param_hash = CacheManager.compute_param_hash(_params)
+            print(f"[DWI Eddy] Current params for hash:")
+            for _k, _v in _params.items():
+                print(f"[DWI Eddy]   {_k}: {_v}")
+
             # Topup prefix from topup_field (expect ..._fieldcoef.nii.gz from Topup node)
             if topup_field_path.name.endswith("_fieldcoef.nii.gz"):
                 topup_prefix = str(
@@ -186,7 +222,21 @@ class DWIEddyCorrectionNode:
 
             output_dir.mkdir(parents=True, exist_ok=True)
             print(f"[DWI Eddy] Output directory: {output_dir}")
-            
+
+            # ── Block 2: pre-compute output paths and check cache ──
+            _dwi_stem = dwi_path.stem.replace(".nii", "")
+            if _dwi_stem.endswith(".gz"):
+                _dwi_stem = _dwi_stem[:-3].replace(".nii", "")
+            _eddy_prefix = output_dir / f"{_dwi_stem}_eddy"
+            _corrected_dwi_pre = Path(str(_eddy_prefix) + ".nii.gz")
+            _rotated_bvecs_pre = Path(str(_eddy_prefix) + ".eddy_rotated_bvecs")
+            _cache_path = output_dir / ".diffyui_cache.json"
+            _expected = [str(_corrected_dwi_pre), str(_rotated_bvecs_pre)]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "DWIEddyCorrection", _param_hash, _expected)
+            if _is_hit:
+                print("[DWI Eddy] Cache hit — skipping.")
+                return tuple(_cached)
+
             # Check if output is on fast storage
             try:
                 import subprocess
@@ -359,6 +409,11 @@ class DWIEddyCorrectionNode:
             print("[DWI Eddy] Eddy correction completed successfully.")
             print(f"[DWI Eddy] Corrected DWI: {corrected_dwi}")
             print("[DWI Eddy] ===== CORRECTION COMPLETE =====")
+
+            # ── Block 3: update cache ──
+            _result_paths = [str(corrected_dwi), rotated_bvecs_str]
+            CacheManager.update_cache(_cache_path, "DWIEddyCorrection", _param_hash, _params, _result_paths)
+
             return (str(corrected_dwi), rotated_bvecs_str)
 
         except Exception as e:

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Import utils using helper module
-from ._import_utils import get_executor
+from ._import_utils import get_executor, CacheManager
 
 
 class DWIBrainMaskNode:
@@ -70,8 +70,29 @@ class DWIBrainMaskNode:
     RETURN_NAMES = ("brain_mask", "extracted_brain")
     FUNCTION = "extract_mask"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "Extract brain mask from DWI data using FSL BET. Extracts b0 volume and creates binary brain mask."
-    
+
+    @classmethod
+    def IS_CHANGED(cls, dwi_file, fractional_intensity=0.2, vertical_gradient=0.0,
+                   radius=45, center_of_gravity="", robust=True, reduce_bias=False,
+                   output_brain=False):
+        """Re-run only when inputs actually change."""
+        try:
+            from ._import_utils import CacheManager
+            params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "dwi_file": dwi_file, "fractional_intensity": fractional_intensity,
+                    "vertical_gradient": vertical_gradient, "radius": radius,
+                    "center_of_gravity": center_of_gravity, "robust": robust,
+                    "reduce_bias": reduce_bias, "output_brain": output_brain,
+                },
+                file_keys=["dwi_file"],
+            )
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
+
     def extract_mask(
         self,
         dwi_file: str,
@@ -111,7 +132,19 @@ class DWIBrainMaskNode:
             
             if not input_dwi.is_file():
                 raise ValueError(f"Path is not a file: {dwi_file}")
-            
+
+            # ── Block 1: build param hash ──
+            _params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "dwi_file": dwi_file, "fractional_intensity": fractional_intensity,
+                    "vertical_gradient": vertical_gradient, "radius": radius,
+                    "center_of_gravity": center_of_gravity, "robust": robust,
+                    "reduce_bias": reduce_bias, "output_brain": output_brain,
+                },
+                file_keys=["dwi_file"],
+            )
+            _param_hash = CacheManager.compute_param_hash(_params)
+
             print(f"[DWI Brain Mask] Input DWI file: {input_dwi}")
             
             # Infer BIDS structure from input file path for output location
@@ -136,37 +169,42 @@ class DWIBrainMaskNode:
             b0_output = output_dir / f"{input_stem}_b0.nii.gz"
             mask_output = output_dir / f"{input_stem}_brain_mask.nii.gz"
             brain_output = output_dir / f"{input_stem}_brain.nii.gz" if output_brain else None
-            
+
+            # ── Block 2: check cache ──
+            _cache_path = output_dir / ".diffyui_cache.json"
+            _expected = [str(mask_output), str(brain_output) if brain_output else ""]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "DWIBrainMask", _param_hash, _expected)
+            if _is_hit:
+                print("[DWI Brain Mask] Cache hit — skipping.")
+                return tuple(_cached)
+
             # Get system executor for FSL
             executor = get_executor("fsl")
             
             print(f"[DWI Brain Mask] Input DWI: {input_dwi}")
             print(f"[DWI Brain Mask] Output directory: {output_dir}")
             
-            # Step 1: Extract first volume (b0) using fslroi
-            # fslroi input output tmin tsize xmin xsize ymin ysize zmin zsize
-            # For 4D data, extract first volume: tmin=0, tsize=1
-            print(f"[DWI Brain Mask] Extracting b0 volume...")
-            fslroi_cmd = [
-                "fslroi",
-                str(input_dwi),
-                str(b0_output),
-                "0",  # tmin: start at volume 0
-                "1"   # tsize: extract 1 volume
-            ]
-            
-            return_code, stdout, stderr = executor.execute(fslroi_cmd)
-            if return_code != 0:
-                raise RuntimeError(f"fslroi failed: {stderr}")
-            
-            # Wait a moment for file to be written
-            import time
-            time.sleep(0.5)
-            
-            if not b0_output.exists():
-                raise RuntimeError(f"b0 extraction failed: output file not found: {b0_output}")
-            
-            print(f"[DWI Brain Mask] b0 volume extracted: {b0_output}")
+            # Step 1: Extract first volume (b0) using fslroi — skip if already on disk
+            # (ExtractB0 node writes to the same derivatives/dwi path, so avoid running twice)
+            if b0_output.exists():
+                print(f"[DWI Brain Mask] b0 already exists, reusing: {b0_output}")
+            else:
+                print(f"[DWI Brain Mask] Extracting b0 volume...")
+                fslroi_cmd = [
+                    "fslroi",
+                    str(input_dwi),
+                    str(b0_output),
+                    "0",  # tmin: start at volume 0
+                    "1"   # tsize: extract 1 volume
+                ]
+                return_code, stdout, stderr = executor.execute(fslroi_cmd)
+                if return_code != 0:
+                    raise RuntimeError(f"fslroi failed: {stderr}")
+                import time
+                time.sleep(0.5)
+                if not b0_output.exists():
+                    raise RuntimeError(f"b0 extraction failed: output file not found: {b0_output}")
+                print(f"[DWI Brain Mask] b0 volume extracted: {b0_output}")
             
             # Step 2: Run BET on b0 image
             # BET creates: <output>.nii.gz (brain) and <output>_mask.nii.gz (mask)
@@ -251,7 +289,11 @@ class DWIBrainMaskNode:
                     print(f"[DWI Brain Mask] Brain image saved: {brain_output}")
             
             print(f"[DWI Brain Mask] Brain mask created: {mask_output}")
-            
+
+            # ── Block 3: update cache ──
+            _result_paths = [str(mask_output), extracted_brain_path]
+            CacheManager.update_cache(_cache_path, "DWIBrainMask", _param_hash, _params, _result_paths)
+
             # Return paths
             return (str(mask_output), extracted_brain_path)
         

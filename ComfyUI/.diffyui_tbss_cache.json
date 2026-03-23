@@ -1,0 +1,18 @@
+{
+  "_version": 1,
+  "_diffyui_version": "0.4.0",
+  "nodes": {
+    "TBSS4Prestats": {
+      "param_hash": "8ca4df00efd185027c5bb5a108b856e15b415c361a221adba9c8c852cde47869",
+      "inputs": {
+        "stats_dir_mtime": 0.0,
+        "threshold": 0.2
+      },
+      "outputs": [
+        "/home/ozgun/AnV/DiffyUI/ComfyUI/all_FA_skeletonised.nii.gz"
+      ],
+      "timestamp": "2026-03-23T00:23:45.660800+00:00",
+      "status": "success"
+    }
+  }
+}

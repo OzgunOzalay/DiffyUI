@@ -19,19 +19,20 @@ try:
     from utils.bids_handler import BIDSHandler
     from utils.system_executor import get_executor
     from utils.file_manager import FileManager
+    from utils.cache_manager import CacheManager
 except ImportError:
     # Fallback: direct file loading
     _utils_path = _custom_nodes_dir / "utils"
-    
+
     # Load bids_handler
     _bids_spec = importlib.util.spec_from_file_location(
-        "bids_handler", 
+        "bids_handler",
         _utils_path / "bids_handler.py"
     )
     _bids_module = importlib.util.module_from_spec(_bids_spec)
     _bids_spec.loader.exec_module(_bids_module)
     BIDSHandler = _bids_module.BIDSHandler
-    
+
     # Load system_executor
     _system_spec = importlib.util.spec_from_file_location(
         "system_executor",
@@ -40,7 +41,7 @@ except ImportError:
     _system_module = importlib.util.module_from_spec(_system_spec)
     _system_spec.loader.exec_module(_system_module)
     get_executor = _system_module.get_executor
-    
+
     # Load file_manager
     _file_spec = importlib.util.spec_from_file_location(
         "file_manager",
@@ -50,4 +51,13 @@ except ImportError:
     _file_spec.loader.exec_module(_file_module)
     FileManager = _file_module.FileManager
 
-__all__ = ['BIDSHandler', 'get_executor', 'FileManager']
+    # Load cache_manager
+    _cache_spec = importlib.util.spec_from_file_location(
+        "cache_manager",
+        _utils_path / "cache_manager.py"
+    )
+    _cache_module = importlib.util.module_from_spec(_cache_spec)
+    _cache_spec.loader.exec_module(_cache_module)
+    CacheManager = _cache_module.CacheManager
+
+__all__ = ['BIDSHandler', 'get_executor', 'FileManager', 'CacheManager']

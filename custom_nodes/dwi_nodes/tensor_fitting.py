@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Import utils using helper module
-from ._import_utils import BIDSHandler, get_executor, FileManager
+from ._import_utils import BIDSHandler, get_executor, FileManager, CacheManager
 
 
 class DWITensorFittingNode:
@@ -56,8 +56,27 @@ class DWITensorFittingNode:
     RETURN_NAMES = ("fa_map", "md_map", "ad_map", "rd_map", "tensor")
     FUNCTION = "fit_tensor"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "Fit diffusion tensor model (DTI) to DWI data"
-    
+
+    @classmethod
+    def IS_CHANGED(cls, bids_dataset, subject_id, dwi_file,
+                   tool="FSL", mask_file="", mask_threshold=0.3):
+        """Re-run only when inputs actually change."""
+        try:
+            from ._import_utils import CacheManager
+            params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "bids_dataset": bids_dataset, "subject_id": subject_id,
+                    "dwi_file": dwi_file, "tool": tool,
+                    "mask_file": mask_file, "mask_threshold": mask_threshold,
+                },
+                file_keys=["dwi_file", "mask_file"],
+            )
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
+
     def fit_tensor(self, bids_dataset, subject_id, dwi_file,
                    tool="FSL", mask_file="", mask_threshold=0.3):
         """
@@ -79,6 +98,17 @@ class DWITensorFittingNode:
             if not input_dwi.exists():
                 raise ValueError(f"Input DWI file not found: {dwi_file}")
 
+            # ── Block 1: build param hash ──
+            _params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "bids_dataset": bids_dataset, "subject_id": subject_id,
+                    "dwi_file": dwi_file, "tool": tool,
+                    "mask_file": mask_file, "mask_threshold": mask_threshold,
+                },
+                file_keys=["dwi_file", "mask_file"],
+            )
+            _param_hash = CacheManager.compute_param_hash(_params)
+
             # BIDS output path: use bids_dataset/subject_id if both provided, else infer from path (same as Eddy/Topup)
             if bids_dataset and str(bids_dataset).strip() and subject_id and str(subject_id).strip():
                 bids = BIDSHandler(str(bids_dataset).strip())
@@ -97,11 +127,40 @@ class DWITensorFittingNode:
 
             input_stem = input_dwi.stem.replace(".nii", "")
             base_output = output_dir / input_stem
-            
+
+            # ── Block 2: pre-compute expected outputs and check cache ──
+            _cache_path = output_dir / ".diffyui_cache.json"
             if tool == "FSL":
-                return self._fit_tensor_fsl(bids, input_dwi, base_output, mask_file, mask_threshold)
+                _expected = [
+                    str(base_output) + "_FA.nii.gz",
+                    str(base_output) + "_MD.nii.gz",
+                    str(base_output) + "_L1.nii.gz",
+                    str(base_output) + "_RD.nii.gz",
+                    str(base_output) + "_tensor.nii.gz",
+                ]
+            else:
+                _expected = [
+                    str(base_output) + "_FA.nii.gz",
+                    str(base_output) + "_MD.nii.gz",
+                    str(base_output) + "_AD.nii.gz",
+                    str(base_output) + "_RD.nii.gz",
+                    str(base_output) + "_tensor.nii.gz",
+                ]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "DWITensorFitting", _param_hash, _expected)
+            if _is_hit:
+                print("[DWI Tensor Fitting] Cache hit — skipping.")
+                return tuple(_cached)
+
+            if tool == "FSL":
+                result = self._fit_tensor_fsl(bids, input_dwi, base_output, mask_file, mask_threshold)
             else:  # MRtrix3
-                return self._fit_tensor_mrtrix(bids, input_dwi, base_output, mask_file)
+                result = self._fit_tensor_mrtrix(bids, input_dwi, base_output, mask_file)
+
+            # ── Block 3: update cache ──
+            if not any(str(r).startswith("Error") for r in result):
+                CacheManager.update_cache(_cache_path, "DWITensorFitting", _param_hash, _params, list(result))
+
+            return result
         
         except Exception as e:
             error_msg = f"Error: {str(e)}"

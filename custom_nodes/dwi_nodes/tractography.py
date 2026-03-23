@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Import utils using helper module
-from ._import_utils import BIDSHandler, get_executor, FileManager
+from ._import_utils import BIDSHandler, get_executor, FileManager, CacheManager
 
 
 class DWITractographyNode:
@@ -82,8 +82,32 @@ class DWITractographyNode:
     RETURN_NAMES = ("tractography_file", "connectivity_matrix")
     FUNCTION = "track"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "Perform tractography (fiber tracking)"
-    
+
+    @classmethod
+    def IS_CHANGED(cls, bids_dataset, subject_id, dwi_file, seed_mask,
+                   tool="MRtrix3", algorithm="probabilistic",
+                   num_streamlines=10000000, step_size=0.5, max_length=200.0,
+                   min_length=10.0, waypoint_mask=""):
+        """Re-run only when inputs actually change."""
+        try:
+            from ._import_utils import CacheManager
+            params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "bids_dataset": bids_dataset, "subject_id": subject_id,
+                    "dwi_file": dwi_file, "seed_mask": seed_mask,
+                    "tool": tool, "algorithm": algorithm,
+                    "num_streamlines": num_streamlines, "step_size": step_size,
+                    "max_length": max_length, "min_length": min_length,
+                    "waypoint_mask": waypoint_mask,
+                },
+                file_keys=["dwi_file", "seed_mask", "waypoint_mask"],
+            )
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
+
     def track(self, bids_dataset, subject_id, dwi_file, seed_mask,
               tool="MRtrix3", algorithm="probabilistic",
               num_streamlines=10000000, step_size=0.5, max_length=200.0,
@@ -115,6 +139,20 @@ class DWITractographyNode:
             if not seed.exists():
                 raise ValueError(f"Seed mask not found: {seed_mask}")
 
+            # ── Block 1: build param hash ──
+            _params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "bids_dataset": bids_dataset, "subject_id": subject_id,
+                    "dwi_file": dwi_file, "seed_mask": seed_mask,
+                    "tool": tool, "algorithm": algorithm,
+                    "num_streamlines": num_streamlines, "step_size": step_size,
+                    "max_length": max_length, "min_length": min_length,
+                    "waypoint_mask": waypoint_mask,
+                },
+                file_keys=["dwi_file", "seed_mask", "waypoint_mask"],
+            )
+            _param_hash = CacheManager.compute_param_hash(_params)
+
             # BIDS output path: use bids_dataset/subject_id if both provided, else infer from path (same as Eddy/Topup)
             if bids_dataset and str(bids_dataset).strip() and subject_id and str(subject_id).strip():
                 bids = BIDSHandler(str(bids_dataset).strip())
@@ -135,15 +173,29 @@ class DWITractographyNode:
             input_stem = input_dwi.stem.replace(".nii", "")
             tractography_output = output_dir / f"{input_stem}_tractography.tck"
             connectivity_output = output_dir / f"{input_stem}_connectivity.csv"
-            
+
+            # ── Block 2: check cache ──
+            _cache_path = output_dir / ".diffyui_cache.json"
+            _expected = [str(tractography_output), str(connectivity_output)]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "DWITractography", _param_hash, _expected)
+            if _is_hit:
+                print("[DWI Tractography] Cache hit — skipping.")
+                return tuple(_cached)
+
             if tool == "MRtrix3":
-                return self._track_mrtrix(bids, input_dwi, seed, tractography_output,
+                result = self._track_mrtrix(bids, input_dwi, seed, tractography_output,
+                                            algorithm, num_streamlines, step_size,
+                                            max_length, min_length, waypoint_mask)
+            else:  # FSL
+                result = self._track_fsl(bids, input_dwi, seed, tractography_output,
                                          algorithm, num_streamlines, step_size,
                                          max_length, min_length, waypoint_mask)
-            else:  # FSL
-                return self._track_fsl(bids, input_dwi, seed, tractography_output,
-                                      algorithm, num_streamlines, step_size,
-                                      max_length, min_length, waypoint_mask)
+
+            # ── Block 3: update cache ──
+            if result and not str(result[0]).startswith("Error"):
+                CacheManager.update_cache(_cache_path, "DWITractography", _param_hash, _params, list(result))
+
+            return result
         
         except Exception as e:
             return (f"Error: {str(e)}", "")

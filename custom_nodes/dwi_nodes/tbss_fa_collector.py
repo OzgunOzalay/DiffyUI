@@ -5,12 +5,12 @@ Inputs match BIDS Loader outputs (bids_dataset, all_subject_ids).
 
 from pathlib import Path
 
-from ._import_utils import BIDSHandler
+from ._import_utils import BIDSHandler, CacheManager
 
 
 class TBSSFACollectorNode:
     """
-    Collect FA images from derivatives/diffyui/sub-*/dwi/*_FA.nii.gz into a single
+    Collect FA images from sub-*/derivatives/diffyui/dwi/DTI/*_FA.nii.gz into a single
     directory for TBSS 1 Preproc. Connect BIDS Loader bids_dataset and optionally
     all_subject_ids to this node.
     """
@@ -37,7 +37,37 @@ class TBSSFACollectorNode:
     RETURN_NAMES = ("fa_directory",)
     FUNCTION = "collect_fa"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "Gather FA images from BIDS derivatives/diffyui into one directory for TBSS. Connect bids_dataset (and optionally all_subject_ids) from BIDS Loader."
+
+    @classmethod
+    def IS_CHANGED(cls, bids_dataset, all_subject_ids=""):
+        """Re-run only when FA files or subject list changes."""
+        try:
+            from pathlib import Path
+            from ._import_utils import CacheManager, BIDSHandler
+            bids_root = Path(bids_dataset).expanduser().resolve()
+            if not bids_root.exists():
+                return float("nan")
+            bids = BIDSHandler(str(bids_root))
+            if all_subject_ids and str(all_subject_ids).strip():
+                raw = str(all_subject_ids).replace(",", " ").replace("\n", " ").split()
+                subject_ids = [s.strip() for s in raw if s.strip()]
+            else:
+                subject_ids = bids.get_all_subjects()
+            fa_files = []
+            for sid in subject_ids:
+                # New structure: bids_root/sub-XX/derivatives/diffyui/dwi/DTI/
+                dti_dir = bids_root / sid / "derivatives" / "diffyui" / "dwi" / "DTI"
+                if dti_dir.exists():
+                    fa_files.extend(dti_dir.glob("*_FA.nii.gz"))
+            _fa_info = sorted(
+                [(str(fa.resolve()), fa.stat().st_mtime, fa.stat().st_size) for fa in fa_files]
+            )
+            params = {"fa_info": _fa_info, "all_subject_ids": all_subject_ids}
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
 
     def collect_fa(self, bids_dataset: str, all_subject_ids: str = ""):
         try:
@@ -48,12 +78,6 @@ class TBSSFACollectorNode:
                 return (err,)
 
             bids = BIDSHandler(str(bids_root))
-            derivatives_root = bids_root / "derivatives" / "diffyui"
-
-            if not derivatives_root.exists():
-                err = f"No derivatives/diffyui found at {derivatives_root}"
-                print(f"[TBSS FA Collector] {err}")
-                return (err,)
 
             # Resolve subject list
             if all_subject_ids and str(all_subject_ids).strip():
@@ -68,23 +92,37 @@ class TBSSFACollectorNode:
                     print(f"[TBSS FA Collector] {err}")
                     return (err,)
 
-            # Collect all *_FA.nii.gz from derivatives/diffyui/sub-XX/dwi/
+            # Collect all *_FA.nii.gz from sub-XX/derivatives/diffyui/dwi/DTI/
             fa_files = []  # (subject_id, path)
             for sid in subject_ids:
-                dwi_dir = derivatives_root / sid / "dwi"
-                if not dwi_dir.exists():
+                dti_dir = bids_root / sid / "derivatives" / "diffyui" / "dwi" / "DTI"
+                if not dti_dir.exists():
+                    print(f"[TBSS FA Collector] DTI dir not found for {sid}: {dti_dir}")
                     continue
-                for fa in dwi_dir.glob("*_FA.nii.gz"):
+                for fa in dti_dir.glob("*_FA.nii.gz"):
                     fa_files.append((sid, fa))
 
             if not fa_files:
-                err = f"No *_FA.nii.gz found under {derivatives_root} for subjects {subject_ids}"
+                err = f"No *_FA.nii.gz found in sub-*/derivatives/diffyui/dwi/DTI/ for subjects {subject_ids}"
                 print(f"[TBSS FA Collector] {err}")
                 return (err,)
 
-            # Output directory: derivatives/diffyui/tbss_fa
-            fa_directory = derivatives_root / "tbss_fa"
+            # Output directory: bids_root/derivatives/tbss_fa (project-level, not per-subject)
+            fa_directory = bids_root / "derivatives" / "tbss_fa"
             fa_directory.mkdir(parents=True, exist_ok=True)
+
+            # ── Block 1+2: build hash from sorted FA file stats and check cache ──
+            _fa_info = sorted(
+                [(str(fa.resolve()), fa.stat().st_mtime, fa.stat().st_size) for _, fa in fa_files]
+            )
+            _params = {"fa_info": _fa_info, "all_subject_ids": all_subject_ids}
+            _param_hash = CacheManager.compute_param_hash(_params)
+            _cache_path = fa_directory / ".diffyui_tbss_cache.json"
+            _expected = [str(fa_directory)]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "TBSSFACollector", _param_hash, _expected)
+            if _is_hit:
+                print("[TBSS FA Collector] Cache hit — skipping.")
+                return tuple(_cached)
 
             for sid, fa_path in fa_files:
                 # Unique name per subject to avoid overwrites (e.g. sub-01_foo_FA.nii.gz)
@@ -99,6 +137,10 @@ class TBSSFACollectorNode:
                     shutil.copy2(fa_path, link_path)
 
             print(f"[TBSS FA Collector] Collected {len(fa_files)} FA images into {fa_directory}")
+
+            # ── Block 3: update cache ──
+            CacheManager.update_cache(_cache_path, "TBSSFACollector", _param_hash, _params, [str(fa_directory)])
+
             return (str(fa_directory),)
 
         except Exception as e:

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Import utils using helper module
-from ._import_utils import BIDSHandler, get_executor, FileManager
+from ._import_utils import BIDSHandler, get_executor, FileManager, CacheManager
 
 
 class DWIBiasCorrectionNode:
@@ -62,8 +62,29 @@ class DWIBiasCorrectionNode:
     RETURN_NAMES = ("bias_corrected", "bias_field")
     FUNCTION = "bias_correct"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "Bias field correction using ANTs N4BiasFieldCorrection"
-    
+
+    @classmethod
+    def IS_CHANGED(cls, bids_dataset, subject_id, input_file,
+                   shrink_factor=4, convergence="[50x50x50x50,0.0000001]",
+                   spline_distance=200, mask_file=""):
+        """Re-run only when inputs actually change."""
+        try:
+            from ._import_utils import CacheManager
+            params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "bids_dataset": bids_dataset, "subject_id": subject_id,
+                    "input_file": input_file, "shrink_factor": shrink_factor,
+                    "convergence": convergence, "spline_distance": spline_distance,
+                    "mask_file": mask_file,
+                },
+                file_keys=["input_file", "mask_file"],
+            )
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
+
     def bias_correct(self, bids_dataset, subject_id, input_file,
                      shrink_factor=4, convergence="[50x50x50x50,0.0000001]",
                      spline_distance=200, mask_file=""):
@@ -87,6 +108,18 @@ class DWIBiasCorrectionNode:
             if not input_path.exists():
                 raise ValueError(f"Input file not found: {input_file}")
 
+            # ── Block 1: build param hash ──
+            _params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "bids_dataset": bids_dataset, "subject_id": subject_id,
+                    "input_file": input_file, "shrink_factor": shrink_factor,
+                    "convergence": convergence, "spline_distance": spline_distance,
+                    "mask_file": mask_file,
+                },
+                file_keys=["input_file", "mask_file"],
+            )
+            _param_hash = CacheManager.compute_param_hash(_params)
+
             # BIDS output path: use bids_dataset/subject_id if both provided, else infer from path (same as Eddy/Topup)
             if bids_dataset and str(bids_dataset).strip() and subject_id and str(subject_id).strip():
                 bids = BIDSHandler(str(bids_dataset).strip())
@@ -107,7 +140,15 @@ class DWIBiasCorrectionNode:
             input_stem = input_path.stem.replace(".nii", "")
             corrected_output = output_dir / f"{input_stem}_bias_corrected.nii.gz"
             bias_field_output = output_dir / f"{input_stem}_bias_field.nii.gz"
-            
+
+            # ── Block 2: check cache ──
+            _cache_path = output_dir / ".diffyui_cache.json"
+            _expected = [str(corrected_output), str(bias_field_output)]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "DWIBiasCorrection", _param_hash, _expected)
+            if _is_hit:
+                print("[DWI Bias Correction] Cache hit — skipping.")
+                return tuple(_cached)
+
             # Get system executor for ANTs
             executor = get_executor("ants")
             
@@ -140,7 +181,10 @@ class DWIBiasCorrectionNode:
                 "SplineDistance": spline_distance
             }
             bids.write_derivative_file(corrected_output, input_path, metadata)
-            
+
+            # ── Block 3: update cache ──
+            CacheManager.update_cache(_cache_path, "DWIBiasCorrection", _param_hash, _params, _expected)
+
             return (str(corrected_output), str(bias_field_output))
         
         except Exception as e:

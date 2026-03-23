@@ -7,7 +7,7 @@ Based on: https://fsl.fmrib.ox.ac.uk/fsl/docs/diffusion/dtifit.html
 import os
 from pathlib import Path
 
-from ._import_utils import BIDSHandler, get_executor
+from ._import_utils import BIDSHandler, get_executor, CacheManager
 
 print("[DWI DTIfit] ===== MODULE LOADING =====")
 
@@ -67,54 +67,76 @@ class DTIfitNode:
             }
         }
     
-    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("fa_map", "md_map", "output_dir", "l1_map", "v1_map", "tensor_file", "all_outputs")
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("fa_map", "v1_map", "md_map", "mo_map", "s0_map", "l1_map", "l2_map", "l3_map", "v2_map", "v3_map", "fa_directory")
     FUNCTION = "run_dtifit"
     CATEGORY = "DWI"
-    DESCRIPTION = "FSL dtifit: Fit diffusion tensor model at each voxel. Outputs FA, MD, L1/L2/L3, V1/V2/V3, MO, S0. Requires eddy-corrected DWI, mask, bvecs, bvals."
-    
+    OUTPUT_NODE = True
+    DESCRIPTION = "FSL dtifit: Fit diffusion tensor model at each voxel. Outputs FA, V1-V3, MD, MO, S0, L1-L3. Requires eddy-corrected DWI, mask, bvecs, bvals."
+
+    @classmethod
+    def IS_CHANGED(cls, dwi_file, mask_file, bvec_file, bval_file,
+                   output_basename="dti", weighted_ls=False, save_tensor=True,
+                   output_sse=False, confound_regressors="", gradnonlin_file=""):
+        """Re-run only when inputs actually change."""
+        try:
+            from ._import_utils import CacheManager
+            params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "dwi_file": dwi_file, "mask_file": mask_file,
+                    "bvec_file": bvec_file, "bval_file": bval_file,
+                    "output_basename": output_basename, "weighted_ls": weighted_ls,
+                    "save_tensor": save_tensor, "output_sse": output_sse,
+                },
+                file_keys=["dwi_file", "mask_file", "bvec_file", "bval_file"],
+            )
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
+
     def run_dtifit(self, dwi_file: str, mask_file: str, bvec_file: str, bval_file: str,
                    output_basename: str = "dti", weighted_ls: bool = False, save_tensor: bool = True,
                    output_sse: bool = False, confound_regressors: str = "", gradnonlin_file: str = ""):
         """
         Run FSL dtifit to fit diffusion tensor model.
-        
-        Args:
-            dwi_file: Diffusion weighted data (4D NIfTI)
-            mask_file: Brain mask (3D binary NIfTI)
-            bvec_file: Gradient directions (bvecs)
-            bval_file: B-values (bvals)
-            output_basename: Output basename (default: dti)
-            weighted_ls: Use weighted least squares
-            save_tensor: Save tensor elements
-            output_sse: Output sum of squared errors
-            confound_regressors: Optional confound regressors file
-            gradnonlin_file: Optional gradient nonlinearity tensor file
-            
+
         Returns:
-            Tuple of (fa_map, md_map, output_dir, l1_map, v1_map, tensor_file, all_outputs)
+            Tuple of (fa_map, v1_map, md_map, mo_map, s0_map, l1_map, l2_map, l3_map, v2_map, v3_map, fa_directory)
         """
+        _N = 11  # number of return values
         try:
             # Validate inputs
             dwi_path = Path(dwi_file.strip())
             mask_path = Path(mask_file.strip())
             bvec_path = Path(bvec_file.strip())
             bval_path = Path(bval_file.strip())
-            
+
             if not dwi_path.exists():
-                return (f"Error: DWI file not found: {dwi_file}",) * 7
+                return (f"Error: DWI file not found: {dwi_file}",) * _N
             if not mask_path.exists():
-                return (f"Error: Mask file not found: {mask_file}",) * 7
+                return (f"Error: Mask file not found: {mask_file}",) * _N
             if not bvec_path.exists():
-                return (f"Error: Bvec file not found: {bvec_file}",) * 7
+                return (f"Error: Bvec file not found: {bvec_file}",) * _N
             if not bval_path.exists():
-                return (f"Error: Bval file not found: {bval_file}",) * 7
-            
+                return (f"Error: Bval file not found: {bval_file}",) * _N
+
+            # ── Block 1: build param hash ──
+            _params = CacheManager.build_params_for_hash(
+                kwargs={
+                    "dwi_file": dwi_file, "mask_file": mask_file,
+                    "bvec_file": bvec_file, "bval_file": bval_file,
+                    "output_basename": output_basename, "weighted_ls": weighted_ls,
+                    "save_tensor": save_tensor, "output_sse": output_sse,
+                },
+                file_keys=["dwi_file", "mask_file", "bvec_file", "bval_file"],
+            )
+            _param_hash = CacheManager.compute_param_hash(_params)
+
             print(f"[DWI DTIfit] DWI input: {dwi_path}")
             print(f"[DWI DTIfit] Mask: {mask_path}")
             print(f"[DWI DTIfit] Bvecs: {bvec_path}")
             print(f"[DWI DTIfit] Bvals: {bval_path}")
-            
+
             # Determine output directory using centralized BIDS path inference
             bids_root, subject_id = BIDSHandler.infer_bids_paths(dwi_path)
             if not subject_id or not bids_root:
@@ -123,14 +145,39 @@ class DTIfitNode:
                 bids = BIDSHandler(str(bids_root))
                 derivatives_path = bids.get_derivatives_path(subject_id, "diffyui")
                 output_dir = derivatives_path / "dwi" / "DTI"
-            
+
             output_dir.mkdir(parents=True, exist_ok=True)
             print(f"[DWI DTIfit] Output directory: {output_dir}")
-            
-            # Full output path with basename
+
             output_prefix = output_dir / output_basename
-            print(f"[DWI DTIfit] Output basename: {output_prefix}")
-            
+
+            # Pre-compute all standard output paths
+            def _p(suffix): return str(output_prefix) + suffix
+
+            fa_map  = _p("_FA.nii.gz")
+            v1_map  = _p("_V1.nii.gz")
+            md_map  = _p("_MD.nii.gz")
+            mo_map  = _p("_MO.nii.gz")
+            s0_map  = _p("_S0.nii.gz")
+            l1_map  = _p("_L1.nii.gz")
+            l2_map  = _p("_L2.nii.gz")
+            l3_map  = _p("_L3.nii.gz")
+            v2_map  = _p("_V2.nii.gz")
+            v3_map  = _p("_V3.nii.gz")
+
+            # ── Block 2: check cache ──
+            _cache_path = output_dir / ".diffyui_cache.json"
+            _expected_cache = [fa_map, v1_map, md_map, mo_map, s0_map,
+                               l1_map, l2_map, l3_map, v2_map, v3_map,
+                               str(output_dir)]
+            _is_hit, _cached = CacheManager.check_cache(
+                _cache_path, "DTIfit", _param_hash, _expected_cache,
+                files_to_check=[fa_map, v1_map, md_map],
+            )
+            if _is_hit:
+                print("[DWI DTIfit] Cache hit — skipping.")
+                return tuple(_cached)
+
             # Build dtifit command
             dtifit_cmd = [
                 "dtifit",
@@ -140,96 +187,55 @@ class DTIfitNode:
                 f"--bvals={bval_path}",
                 f"--out={output_prefix}",
             ]
-            
-            # Optional flags
+
             if weighted_ls:
                 dtifit_cmd.append("--wls")
                 print("[DWI DTIfit] Using weighted least squares (--wls)")
-            
             if save_tensor:
                 dtifit_cmd.append("--save_tensor")
                 print("[DWI DTIfit] Saving tensor elements (--save_tensor)")
-            
             if output_sse:
                 dtifit_cmd.append("--sse")
                 print("[DWI DTIfit] Outputting sum of squared errors (--sse)")
-            
             if confound_regressors and Path(confound_regressors.strip()).exists():
                 dtifit_cmd.append(f"--cni={confound_regressors.strip()}")
-                print(f"[DWI DTIfit] Using confound regressors: {confound_regressors.strip()}")
-            
             if gradnonlin_file and Path(gradnonlin_file.strip()).exists():
                 dtifit_cmd.append(f"--gradnonlin={gradnonlin_file.strip()}")
-                print(f"[DWI DTIfit] Using gradient nonlinearity file: {gradnonlin_file.strip()}")
-            
+
             print(f"[DWI DTIfit] Running: {' '.join(dtifit_cmd)}")
-            
-            # Execute dtifit
+
             executor = get_executor("fsl")
             return_code, stdout, stderr = executor.execute(
                 dtifit_cmd,
                 working_dir=str(output_dir),
             )
-            
+
             if return_code != 0:
                 error_msg = f"dtifit failed (exit code {return_code}): {stderr}"
                 if stdout:
                     error_msg += f"\nStdout: {stdout}"
                 print(f"[DWI DTIfit] ERROR: {error_msg}")
-                return (f"Error: {error_msg}",) * 7
-            
+                return (f"Error: {error_msg}",) * _N
+
             print(f"[DWI DTIfit] dtifit completed successfully")
-            
-            # Output files (FSL dtifit standard naming)
-            fa_map = str(output_prefix) + "_FA.nii.gz"
-            md_map = str(output_prefix) + "_MD.nii.gz"
-            mo_map = str(output_prefix) + "_MO.nii.gz"
-            s0_map = str(output_prefix) + "_S0.nii.gz"
-            l1_map = str(output_prefix) + "_L1.nii.gz"
-            l2_map = str(output_prefix) + "_L2.nii.gz"
-            l3_map = str(output_prefix) + "_L3.nii.gz"
-            v1_map = str(output_prefix) + "_V1.nii.gz"
-            v2_map = str(output_prefix) + "_V2.nii.gz"
-            v3_map = str(output_prefix) + "_V3.nii.gz"
-            tensor_file = str(output_prefix) + "_tensor.nii.gz" if save_tensor else ""
-            sse_file = str(output_prefix) + "_sse.nii.gz" if output_sse else ""
-            
-            # Verify key outputs exist
+
             if not Path(fa_map).exists():
                 error_msg = f"dtifit completed but FA output not found: {fa_map}"
                 print(f"[DWI DTIfit] ERROR: {error_msg}")
-                return (f"Error: {error_msg}",) * 7
-            
-            print(f"[DWI DTIfit] FA map: {fa_map}")
-            print(f"[DWI DTIfit] MD map: {md_map}")
-            print(f"[DWI DTIfit] L1 (AD) map: {l1_map}")
-            print(f"[DWI DTIfit] V1 (primary eigenvector): {v1_map}")
-            if tensor_file and Path(tensor_file).exists():
-                print(f"[DWI DTIfit] Tensor: {tensor_file}")
-            
-            # Summary of all outputs for downstream nodes
-            all_outputs = (
-                f"FA: {fa_map}\n"
-                f"MD: {md_map}\n"
-                f"MO: {mo_map}\n"
-                f"S0: {s0_map}\n"
-                f"L1: {l1_map}\n"
-                f"L2: {l2_map}\n"
-                f"L3: {l3_map}\n"
-                f"V1: {v1_map}\n"
-                f"V2: {v2_map}\n"
-                f"V3: {v3_map}"
-            )
-            if tensor_file:
-                all_outputs += f"\nTensor: {tensor_file}"
-            if sse_file:
-                all_outputs += f"\nSSE: {sse_file}"
-            
-            return (fa_map, md_map, str(output_dir), l1_map, v1_map, tensor_file, all_outputs)
-        
+                return (f"Error: {error_msg}",) * _N
+
+            print(f"[DWI DTIfit] FA: {fa_map}")
+            print(f"[DWI DTIfit] V1: {v1_map}")
+            print(f"[DWI DTIfit] MD: {md_map}")
+
+            # ── Block 3: update cache ──
+            CacheManager.update_cache(_cache_path, "DTIfit", _param_hash, _params, _expected_cache)
+
+            return (fa_map, v1_map, md_map, mo_map, s0_map, l1_map, l2_map, l3_map, v2_map, v3_map, str(output_dir))
+
         except Exception as e:
             error_msg = f"Exception in DTIfit node: {str(e)}"
             print(f"[DWI DTIfit] ERROR: {error_msg}")
             import traceback
             traceback.print_exc()
-            return (f"Error: {error_msg}",) * 7
+            return (f"Error: {error_msg}",) * _N

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Import utils using helper module
-from ._import_utils import get_executor
+from ._import_utils import get_executor, CacheManager
 
 print("[Extract B0] ===== MODULE LOADING =====")
 
@@ -52,13 +52,21 @@ class ExtractB0Node:
     RETURN_NAMES = ("b0_file",)
     FUNCTION = "extract_b0"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "Extract B0 volume (first volume) from 4D DWI data using FSL fslroi."
     
     @classmethod
-    def IS_CHANGED(cls, dwi_file, **kwargs):
-        """Force re-execution when inputs change."""
-        import time
-        return str(time.time())
+    def IS_CHANGED(cls, dwi_file, volume_index=0, num_volumes=1):
+        """Re-run only when inputs actually change."""
+        try:
+            from ._import_utils import CacheManager
+            params = CacheManager.build_params_for_hash(
+                kwargs={"dwi_file": dwi_file, "volume_index": volume_index, "num_volumes": num_volumes},
+                file_keys=["dwi_file"],
+            )
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
     
     def extract_b0(
         self,
@@ -100,9 +108,16 @@ class ExtractB0Node:
                 error_msg = f"Path is not a file: {dwi_file}"
                 print(f"[Extract B0] ERROR: {error_msg}")
                 return (f"Error: {error_msg}",)
-            
+
+            # ── Block 1: build param hash ──
+            _params = CacheManager.build_params_for_hash(
+                kwargs={"dwi_file": dwi_file, "volume_index": volume_index, "num_volumes": num_volumes},
+                file_keys=["dwi_file"],
+            )
+            _param_hash = CacheManager.compute_param_hash(_params)
+
             print(f"[Extract B0] Input DWI file: {input_dwi}")
-            
+
             # Infer BIDS structure from input file path
             from ._import_utils import BIDSHandler
             bids_root, subject_id = BIDSHandler.infer_bids_paths(input_dwi)
@@ -136,7 +151,15 @@ class ExtractB0Node:
                     output_suffix += f"-{volume_index + num_volumes - 1}"
             
             b0_output = output_dir / f"{input_stem}{output_suffix}.nii.gz"
-            
+
+            # ── Block 2: check cache ──
+            _cache_path = output_dir / ".diffyui_cache.json"
+            _expected = [str(b0_output)]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "ExtractB0", _param_hash, _expected)
+            if _is_hit:
+                print("[Extract B0] Cache hit — skipping.")
+                return tuple(_cached)
+
             # Get system executor for FSL
             executor = get_executor("fsl")
             
@@ -173,7 +196,10 @@ class ExtractB0Node:
             
             print(f"[Extract B0] B0 volume extracted successfully: {b0_output}")
             print(f"[Extract B0] ===== EXTRACTION COMPLETE =====")
-            
+
+            # ── Block 3: update cache ──
+            CacheManager.update_cache(_cache_path, "ExtractB0", _param_hash, _params, _expected)
+
             return (str(b0_output),)
         
         except Exception as e:

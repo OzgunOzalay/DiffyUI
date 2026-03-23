@@ -4,7 +4,7 @@ TBSS 4 Prestats Node - FSL tbss_4_prestats: threshold skeleton, project FA onto 
 
 from pathlib import Path
 
-from ._import_utils import get_executor
+from ._import_utils import get_executor, CacheManager
 
 
 class TBSS4PrestatsNode:
@@ -37,7 +37,22 @@ class TBSS4PrestatsNode:
     RETURN_NAMES = ("project_dir", "all_fa_skeletonised_path")
     FUNCTION = "prestats"
     CATEGORY = "DWI"
+    OUTPUT_NODE = True
     DESCRIPTION = "TBSS step 4: threshold mean FA skeleton and project each subject's FA onto it. Outputs 4D all_FA_skeletonised path."
+
+    @classmethod
+    def IS_CHANGED(cls, project_dir, threshold=0.2):
+        """Re-run only when inputs actually change."""
+        try:
+            from pathlib import Path
+            from ._import_utils import CacheManager
+            proj = Path(project_dir).expanduser().resolve()
+            _stats_dir = proj / "stats"
+            _stats_mtime = _stats_dir.stat().st_mtime if _stats_dir.exists() else 0.0
+            params = {"stats_dir_mtime": _stats_mtime, "threshold": threshold}
+            return CacheManager.compute_param_hash(params)
+        except Exception:
+            return float("nan")
 
     def prestats(self, project_dir: str, threshold: float = 0.2):
         try:
@@ -46,6 +61,19 @@ class TBSS4PrestatsNode:
                 err = f"Project directory not found: {project_dir}"
                 print(f"[TBSS 4 Prestats] {err}")
                 return (err, err)
+
+            # ── Block 1+2: hash on proj stats dir mtime + threshold, check cache ──
+            _stats_dir = proj / "stats"
+            _stats_mtime = _stats_dir.stat().st_mtime if _stats_dir.exists() else 0.0
+            _params = {"stats_dir_mtime": _stats_mtime, "threshold": threshold}
+            _param_hash = CacheManager.compute_param_hash(_params)
+            _cache_path = proj / ".diffyui_tbss_cache.json"
+            _all_fa_skel_pre = str(_stats_dir / "all_FA_skeletonised.nii.gz")
+            _expected = [_all_fa_skel_pre]
+            _is_hit, _cached = CacheManager.check_cache(_cache_path, "TBSS4Prestats", _param_hash, _expected)
+            if _is_hit:
+                print("[TBSS 4 Prestats] Cache hit — skipping.")
+                return (str(proj), _cached[0])
 
             executor = get_executor("fsl")
             # FSL tbss_4_prestats takes threshold as argument
@@ -63,6 +91,10 @@ class TBSS4PrestatsNode:
                 all_fa_skel = proj / "all_FA_skeletonised.nii.gz"
 
             print(f"[TBSS 4 Prestats] Success. project_dir={proj}")
+
+            # ── Block 3: update cache ──
+            CacheManager.update_cache(_cache_path, "TBSS4Prestats", _param_hash, _params, [str(all_fa_skel)])
+
             return (str(proj), str(all_fa_skel))
 
         except Exception as e:
