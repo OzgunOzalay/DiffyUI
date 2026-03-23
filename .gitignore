@@ -10,14 +10,13 @@ ENV/
 .venv
 
 # Directories not tracked
-models/
+ComfyUI/models/
 output/
 input/
 .python-embed/
 
 # ComfyUI internals not needed for DWI
 ComfyUI/comfy/text_encoders/
-ComfyUI/comfy/taesd/
 ComfyUI/comfy/sd1_tokenizer/
 ComfyUI/comfy_api_nodes/
 ComfyUI/tests/

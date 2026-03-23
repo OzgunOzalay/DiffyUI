@@ -15,6 +15,34 @@ else
     echo "ComfyUI directory already exists, skipping clone..."
 fi
 
+# Supplement ComfyUI with modules excluded from git tracking but required at runtime.
+# These are core ComfyUI Python modules (no large model files) needed to boot the server.
+SUPPLEMENT_DIRS=(
+    "comfy/text_encoders"
+    "comfy/ldm/models"
+    "comfy/sd1_tokenizer"
+)
+MISSING=()
+for d in "${SUPPLEMENT_DIRS[@]}"; do
+    [ ! -d "ComfyUI/$d" ] && MISSING+=("$d")
+done
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+    echo "Fetching missing ComfyUI core modules from upstream (sparse clone)..."
+    TMPDIR_COMFY=$(mktemp -d)
+    git clone --depth=1 --filter=blob:none --sparse \
+        https://github.com/comfyanonymous/ComfyUI.git "$TMPDIR_COMFY"
+    (cd "$TMPDIR_COMFY" && git sparse-checkout set "${MISSING[@]}")
+    for d in "${MISSING[@]}"; do
+        DEST="ComfyUI/$(dirname "$d")"
+        mkdir -p "$DEST"
+        cp -r "$TMPDIR_COMFY/$d" "$DEST/"
+        echo "  ✓ Fetched $d"
+    done
+    rm -rf "$TMPDIR_COMFY"
+    echo "Core modules restored."
+fi
+
 cd ComfyUI
 
 # Use venv if present (create one if you want: python -m venv venv)
@@ -33,7 +61,8 @@ pip install "nibabel>=5.0.0" "numpy>=1.24.0" "pybids>=0.16.0" matplotlib Pillow 
 
 # Create symlink to custom nodes
 cd ..
-if [ ! -L "ComfyUI/custom_nodes/dwi_nodes" ]; then
+mkdir -p ComfyUI/custom_nodes
+if [ ! -L "ComfyUI/custom_nodes/dwi_nodes" ] || [ "$(readlink ComfyUI/custom_nodes/dwi_nodes)" != "$(pwd)/custom_nodes/dwi_nodes" ]; then
     echo "Creating symlink to custom nodes..."
     ln -sf "$(pwd)/custom_nodes/dwi_nodes" ComfyUI/custom_nodes/dwi_nodes
     ln -sf "$(pwd)/custom_nodes/utils" ComfyUI/custom_nodes/utils
