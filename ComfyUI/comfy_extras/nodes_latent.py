@@ -1,5 +1,4 @@
 import comfy.utils
-import comfy_extras.nodes_post_processing
 import torch
 import nodes
 from typing_extensions import override
@@ -14,6 +13,8 @@ def reshape_latent_to(target_shape, latent, repeat_batch=True):
         return comfy.utils.repeat_to_batch_size(latent, target_shape[0])
     else:
         return latent
+
+import comfy_extras.nodes_post_processing
 
 
 class LatentAdd(io.ComfyNode):

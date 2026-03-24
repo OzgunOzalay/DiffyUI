@@ -75,9 +75,9 @@ class DTIfitNode:
     DESCRIPTION = "FSL dtifit: Fit diffusion tensor model at each voxel. Outputs FA, V1-V3, MD, MO, S0, L1-L3. Requires eddy-corrected DWI, mask, bvecs, bvals."
 
     @classmethod
-    def IS_CHANGED(cls, dwi_file, mask_file, bvec_file, bval_file,
+    def IS_CHANGED(cls, dwi_file="", mask_file="", bvec_file="", bval_file="",
                    output_basename="dti", weighted_ls=False, save_tensor=True,
-                   output_sse=False, confound_regressors="", gradnonlin_file=""):
+                   output_sse=False, confound_regressors="", gradnonlin_file="", **kwargs):
         """Re-run only when inputs actually change."""
         try:
             from ._import_utils import CacheManager

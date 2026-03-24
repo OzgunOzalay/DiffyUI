@@ -60,4 +60,12 @@ except ImportError:
     _cache_spec.loader.exec_module(_cache_module)
     CacheManager = _cache_module.CacheManager
 
-__all__ = ['BIDSHandler', 'get_executor', 'FileManager', 'CacheManager']
+def _is_upstream_error(value: str) -> bool:
+    """Return True if value looks like a propagated error string rather than a real path."""
+    if not value:
+        return False
+    # Real paths on Linux start with '/'
+    return not str(value).startswith("/")
+
+
+__all__ = ['BIDSHandler', 'get_executor', 'FileManager', 'CacheManager', '_is_upstream_error']

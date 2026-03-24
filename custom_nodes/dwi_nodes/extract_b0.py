@@ -56,7 +56,7 @@ class ExtractB0Node:
     DESCRIPTION = "Extract B0 volume (first volume) from 4D DWI data using FSL fslroi."
     
     @classmethod
-    def IS_CHANGED(cls, dwi_file, volume_index=0, num_volumes=1):
+    def IS_CHANGED(cls, dwi_file="", volume_index=0, num_volumes=1, **kwargs):
         """Re-run only when inputs actually change."""
         try:
             from ._import_utils import CacheManager

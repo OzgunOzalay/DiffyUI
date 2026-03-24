@@ -121,8 +121,12 @@ class TBSSFACollectorNode:
             _expected = [str(fa_directory)]
             _is_hit, _cached = CacheManager.check_cache(_cache_path, "TBSSFACollector", _param_hash, _expected)
             if _is_hit:
-                print("[TBSS FA Collector] Cache hit — skipping.")
-                return tuple(_cached)
+                # Verify the directory still contains FA files — symlinks may have broken
+                _cached_dir = Path(_cached[0])
+                if _cached_dir.exists() and list(_cached_dir.glob("*FA*.nii.gz")):
+                    print("[TBSS FA Collector] Cache hit — skipping.")
+                    return tuple(_cached)
+                print("[TBSS FA Collector] Cache hit but FA files missing — re-running.")
 
             for sid, fa_path in fa_files:
                 # Unique name per subject to avoid overwrites (e.g. sub-01_foo_FA.nii.gz)

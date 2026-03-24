@@ -32,6 +32,137 @@ except ImportError as e:
     IMPORT_ERROR = str(e)
 
 
+# Register server route to launch FSLeyes from the UI button
+try:
+    from server import PromptServer
+    from aiohttp import web as _web
+    import subprocess as _subprocess
+
+    @PromptServer.instance.routes.post("/diffyui/open_fsleyes")
+    async def _open_fsleyes_route(request):
+        try:
+            data = await request.json()
+            file_path = data.get("file_path", "").strip()
+            if not file_path:
+                return _web.json_response({"status": "error", "error": "No file path provided"})
+            # Support comma-separated paths (pass all to fsleyes)
+            paths = [p.strip() for p in file_path.split(",") if p.strip()]
+            _subprocess.Popen(["fsleyes"] + paths)
+            return _web.json_response({"status": "ok"})
+        except FileNotFoundError:
+            return _web.json_response({"status": "error", "error": "fsleyes not found on PATH"})
+        except Exception as exc:
+            return _web.json_response({"status": "error", "error": str(exc)})
+
+except Exception:
+    pass  # Running outside ComfyUI (e.g. tests)
+
+
+def _find_mni152_template() -> Path:
+    """Return path to MNI152_T1_1mm.nii.gz from FSL standard images."""
+    fsldir = os.environ.get("FSLDIR", "")
+    candidates = []
+    if fsldir:
+        candidates += [
+            Path(fsldir) / "data" / "standard" / "MNI152_T1_1mm_brain.nii.gz",
+            Path(fsldir) / "data" / "standard" / "MNI152_T1_1mm.nii.gz",
+        ]
+    # Common install locations as fallback
+    candidates += [
+        Path("/usr/share/fsl/data/standard/MNI152_T1_1mm_brain.nii.gz"),
+        Path("/usr/share/fsl/data/standard/MNI152_T1_1mm.nii.gz"),
+        Path("/usr/local/fsl/data/standard/MNI152_T1_1mm_brain.nii.gz"),
+        Path("/usr/local/fsl/data/standard/MNI152_T1_1mm.nii.gz"),
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError("MNI152_T1_1mm.nii.gz not found. Is FSLDIR set?")
+
+
+def _render_skeleton_overlay(skeleton_path: Path, output_size: str) -> np.ndarray:
+    """
+    Render a 3-panel (sagittal, coronal, axial) composite of skeleton overlaid on
+    MNI152 T1 1mm.  Skeleton is shown in green, background in grayscale.
+    Returns uint8 RGB array (H, W, 3).
+    """
+    import nibabel as nib
+    from nibabel.orientations import aff2axcodes, axcodes2ornt, ornt_transform, apply_orientation
+
+    def _to_ras(img):
+        data = np.array(img.get_fdata(caching='unchanged'))
+        axcodes = aff2axcodes(img.affine)
+        transform = ornt_transform(axcodes2ornt(axcodes), axcodes2ornt(('R', 'A', 'S')))
+        return apply_orientation(data, transform)
+
+    # Load and reorient both volumes to RAS+
+    bg_data = _to_ras(nib.load(str(_find_mni152_template())))
+    sk_data = _to_ras(nib.load(str(skeleton_path)))
+
+    # Normalise background to [0, 1]
+    bg_p2, bg_p98 = np.percentile(bg_data[np.isfinite(bg_data)], [2, 98])
+    bg_norm = np.clip((bg_data - bg_p2) / max(bg_p98 - bg_p2, 1e-6), 0, 1)
+
+    # Normalise skeleton values to [0, 1] for intensity modulation
+    sk_finite = sk_data[np.isfinite(sk_data) & (sk_data > 0)]
+    if sk_finite.size > 0:
+        sk_max = sk_finite.max()
+        sk_norm = np.clip(sk_data / max(sk_max, 1e-6), 0, 1)
+    else:
+        sk_norm = sk_data.copy()
+    sk_mask = sk_norm > 0
+
+    # Use MNI mid-slices as anchor; skeleton may be slightly different size — use its mid
+    def _mid(vol): return vol.shape[0] // 2, vol.shape[1] // 2, vol.shape[2] // 2
+
+    bx, by, bz = _mid(bg_norm)
+    sx, sy, sz = _mid(sk_norm)
+
+    def _slice_rgb(bg_slice, sk_slice, sk_mask_slice):
+        """Composite: grayscale background + green skeleton overlay."""
+        # Background: grayscale → RGB
+        bg_gray = np.clip(bg_slice, 0, 1)
+        rgb = np.stack([bg_gray, bg_gray, bg_gray], axis=-1)
+        # Green overlay where skeleton present (additive blend capped at 1)
+        green_intensity = sk_slice * sk_mask_slice
+        rgb[..., 0] = np.clip(rgb[..., 0] - green_intensity * 0.3, 0, 1)  # suppress R
+        rgb[..., 1] = np.clip(rgb[..., 1] + green_intensity * 0.8, 0, 1)  # boost G
+        rgb[..., 2] = np.clip(rgb[..., 2] - green_intensity * 0.3, 0, 1)  # suppress B
+        return (rgb * 255).astype(np.uint8)
+
+    panels = []
+    for (b_sl, s_sl, m_sl) in [
+        (np.flipud(np.transpose(bg_norm[bx, :, :], (1, 0))), np.flipud(np.transpose(sk_norm[sx, :, :], (1, 0))), np.flipud(np.transpose(sk_mask[sx, :, :], (1, 0)))),  # sagittal
+        (np.flipud(np.transpose(bg_norm[:, by, :], (1, 0))), np.flipud(np.transpose(sk_norm[:, sy, :], (1, 0))), np.flipud(np.transpose(sk_mask[:, sy, :], (1, 0)))),  # coronal
+        (np.flipud(np.transpose(bg_norm[:, :, bz], (1, 0))), np.flipud(np.transpose(sk_norm[:, :, sz], (1, 0))), np.flipud(np.transpose(sk_mask[:, :, sz], (1, 0)))),  # axial
+    ]:
+        panels.append(_slice_rgb(b_sl, s_sl, m_sl))
+
+    target_w, target_h = map(int, output_size.split("x"))
+    panel_w = target_w // 3
+
+    # Resize each panel to uniform height
+    from PIL import Image as _PIL
+    resized = []
+    for panel in panels:
+        h, w = panel.shape[:2]
+        scale = panel_w / w
+        new_h = int(h * scale)
+        pil = _PIL.fromarray(panel).resize((panel_w, new_h), _PIL.Resampling.LANCZOS)
+        resized.append(np.array(pil))
+
+    max_h = max(p.shape[0] for p in resized)
+    # Pad shorter panels to same height (black)
+    padded = []
+    for p in resized:
+        if p.shape[0] < max_h:
+            pad = np.zeros((max_h - p.shape[0], p.shape[1], 3), dtype=np.uint8)
+            p = np.vstack([p, pad])
+        padded.append(p)
+
+    return np.hstack(padded)
+
+
 class NIfTIPreviewNode:
     """
     NIfTI Preview Node - Uses Python (nibabel + matplotlib) to create 3-panel overview screenshots.
@@ -115,13 +246,23 @@ class NIfTIPreviewNode:
             return (error_image,)
         
         try:
+            # Normalise — upstream nodes may pass None on error
+            if nifti_file is None:
+                nifti_file = ""
+            nifti_file = str(nifti_file)
+
             print(f"[NIfTI Preview] ===== STARTING PREVIEW =====")
             print(f"[NIfTI Preview] Input file: {nifti_file}")
-            
+
             # Validate file path
-            if not nifti_file or not nifti_file.strip():
+            if not nifti_file.strip():
                 print(f"[NIfTI Preview] ERROR: NIfTI file path is empty!")
                 raise ValueError("NIfTI file path is empty")
+
+            # Detect upstream error strings (real paths start with '/')
+            if not nifti_file.strip().startswith("/"):
+                print(f"[NIfTI Preview] Upstream error received — skipping preview.")
+                raise ValueError(f"Upstream node failed: {nifti_file.strip()[:120]}")
             
             # Handle comma-separated paths (take first)
             file_path = nifti_file.strip()
@@ -135,7 +276,41 @@ class NIfTIPreviewNode:
             
             if not nifti_path.exists():
                 raise ValueError(f"NIfTI file not found: {nifti_path}")
-            
+
+            # ── Skeleton overlay mode ──────────────────────────────────────────────
+            # If "skeleton" is in the filename, render as green overlay on MNI152 T1.
+            if "skeleton" in nifti_path.name.lower():
+                print(f"[NIfTI Preview] Skeleton detected — rendering MNI152 overlay.")
+                try:
+                    composite = _render_skeleton_overlay(nifti_path, output_size)
+                except Exception as skel_err:
+                    print(f"[NIfTI Preview] Skeleton overlay failed ({skel_err}), falling back to scalar mode.")
+                    composite = None
+
+                if composite is not None:
+                    import hashlib
+                    file_hash = hashlib.md5(str(nifti_path).encode()).hexdigest()[:8]
+                    unique_id = str(uuid.uuid4())[:8]
+                    preview_filename = f"nifti_preview_{file_hash}_{unique_id}.png"
+                    if HAS_FOLDER_PATHS and folder_paths:
+                        temp_dir = folder_paths.get_temp_directory()
+                    else:
+                        temp_dir = "/tmp"
+                    preview_path = os.path.join(temp_dir, preview_filename)
+                    from PIL import Image as _PIL
+                    _PIL.fromarray(composite).save(preview_path)
+                    preview_float = composite.astype(np.float32) / 255.0
+                    preview_tensor = torch.from_numpy(np.expand_dims(preview_float, 0))
+                    print(f"[NIfTI Preview] Skeleton overlay complete.")
+                    return {
+                        "ui": {
+                            "images": [{"filename": preview_filename, "subfolder": "", "type": "temp"}],
+                            "nifti_path": [str(nifti_path)],
+                        },
+                        "result": (preview_tensor,)
+                    }
+            # ──────────────────────────────────────────────────────────────────────
+
             # Detect DTI color map mode (FA + V1 eigenvector)
             v1_path = None
             dti_color_mode = False
@@ -472,7 +647,8 @@ class NIfTIPreviewNode:
                             "subfolder": "",
                             "type": "temp"
                         }
-                    ]
+                    ],
+                    "nifti_path": [str(nifti_path)],
                 },
                 "result": (preview_tensor,)
             }

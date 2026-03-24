@@ -4,7 +4,7 @@ TBSS 2 Reg Node - FSL tbss_2_reg: non-linear registration to template or midpoin
 
 from pathlib import Path
 
-from ._import_utils import get_executor, CacheManager
+from ._import_utils import get_executor, CacheManager, _is_upstream_error
 
 
 class TBSS2RegNode:
@@ -35,21 +35,25 @@ class TBSS2RegNode:
     DESCRIPTION = "TBSS step 2: non-linear registration of all FA images to standard space (-T template or -n midpoint)."
 
     @classmethod
-    def IS_CHANGED(cls, project_dir, target):
+    def IS_CHANGED(cls, project_dir, target, **kwargs):
         """Re-run only when inputs actually change."""
         try:
             from pathlib import Path
             from ._import_utils import CacheManager
             proj = Path(project_dir).expanduser().resolve()
             _fa_dir = proj / "FA"
-            _fa_mtime = _fa_dir.stat().st_mtime if _fa_dir.exists() else 0.0
-            params = {"fa_dir_mtime": _fa_mtime, "target": target}
+            _warp_files = sorted(_fa_dir.glob("*_warp.nii.gz")) if _fa_dir.exists() else []
+            _warp_info = [(w.name, w.stat().st_mtime) for w in _warp_files]
+            params = {"warp_info": _warp_info, "target": target}
             return CacheManager.compute_param_hash(params)
         except Exception:
             return float("nan")
 
     def reg(self, project_dir: str, target: str):
         try:
+            if _is_upstream_error(project_dir):
+                print(f"[TBSS 2 Reg] Upstream error: {project_dir}")
+                return (project_dir,)
             proj = Path(project_dir).expanduser().resolve()
             if not proj.exists() or not proj.is_dir():
                 err = f"Project directory not found: {project_dir}"
@@ -58,10 +62,13 @@ class TBSS2RegNode:
 
             flag = "-T" if target.startswith("Template") else "-n"
 
-            # ── Block 1+2: hash on proj FA dir mtime + target, check cache ──
+            # ── Block 1+2: hash on warp file mtimes + target, check cache ──
+            # Using warp file mtimes (not FA dir mtime) so re-running
+            # TBSSFACollector doesn't invalidate this cache unnecessarily.
             _fa_dir = proj / "FA"
-            _fa_mtime = _fa_dir.stat().st_mtime if _fa_dir.exists() else 0.0
-            _params = {"fa_dir_mtime": _fa_mtime, "target": target}
+            _warp_files = sorted(_fa_dir.glob("*_warp.nii.gz")) if _fa_dir.exists() else []
+            _warp_info = [(w.name, w.stat().st_mtime) for w in _warp_files]
+            _params = {"warp_info": _warp_info, "target": target}
             _param_hash = CacheManager.compute_param_hash(_params)
             _cache_path = proj / ".diffyui_tbss_cache.json"
             # Reg creates warp files inside FA/ subdir; check FA dir still exists
@@ -76,9 +83,31 @@ class TBSS2RegNode:
                 print("[TBSS 2 Reg] Cache hit — skipping.")
                 return (str(proj),)
 
+            # Check if registrations already completed (warp .nii.gz exists for
+            # every FA file).  This happens when TBSSFACollector re-runs and
+            # updates the directory mtime, causing a cache miss even though all
+            # warps are present from a previous successful run.
+            fa_subdir = proj / "FA"
+            if fa_subdir.exists():
+                fa_files = list(fa_subdir.glob("*_FA.nii.gz"))
+                if fa_files:
+                    all_warped = all(
+                        (fa_subdir / (f.name.replace(".nii.gz", "_to_target_warp.nii.gz"))).exists()
+                        for f in fa_files
+                    )
+                    if all_warped:
+                        print("[TBSS 2 Reg] All warp files already exist — skipping tbss_2_reg.")
+                        CacheManager.update_cache(
+                            _cache_path, "TBSS2Reg", _param_hash, _params, [str(_fa_dir)]
+                        )
+                        return (str(proj),)
+
             executor = get_executor("fsl")
             cmd = ["tbss_2_reg", flag]
-            return_code, stdout, stderr = executor.execute(cmd, working_dir=str(proj))
+            return_code, stdout, stderr = executor.execute(
+                cmd,
+                working_dir=str(proj),
+            )
 
             if return_code != 0:
                 err = f"tbss_2_reg failed: {stderr or stdout}"

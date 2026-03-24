@@ -4,7 +4,7 @@ TBSS 3 Postreg Node - FSL tbss_3_postreg: apply warps, create mean FA and skelet
 
 from pathlib import Path
 
-from ._import_utils import get_executor, CacheManager
+from ._import_utils import get_executor, CacheManager, _is_upstream_error
 
 
 class TBSS3PostregNode:
@@ -51,6 +51,9 @@ class TBSS3PostregNode:
 
     def postreg(self, project_dir: str, use_study_mean: str):
         try:
+            if _is_upstream_error(project_dir):
+                print(f"[TBSS 3 Postreg] Upstream error: {project_dir}")
+                return (project_dir, project_dir, project_dir)
             proj = Path(project_dir).expanduser().resolve()
             if not proj.exists() or not proj.is_dir():
                 err = f"Project directory not found: {project_dir}"

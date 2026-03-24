@@ -4,7 +4,7 @@ TBSS 4 Prestats Node - FSL tbss_4_prestats: threshold skeleton, project FA onto 
 
 from pathlib import Path
 
-from ._import_utils import get_executor, CacheManager
+from ._import_utils import get_executor, CacheManager, _is_upstream_error
 
 
 class TBSS4PrestatsNode:
@@ -33,12 +33,12 @@ class TBSS4PrestatsNode:
             }
         }
 
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("project_dir", "all_fa_skeletonised_path")
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("project_dir", "all_fa_skeletonised_path", "mean_fa_skeleton_path")
     FUNCTION = "prestats"
     CATEGORY = "DWI"
     OUTPUT_NODE = True
-    DESCRIPTION = "TBSS step 4: threshold mean FA skeleton and project each subject's FA onto it. Outputs 4D all_FA_skeletonised path."
+    DESCRIPTION = "TBSS step 4: threshold mean FA skeleton and project each subject's FA onto it. Outputs 4D all_FA_skeletonised and mean_FA_skeleton paths."
 
     @classmethod
     def IS_CHANGED(cls, project_dir, threshold=0.2):
@@ -56,11 +56,14 @@ class TBSS4PrestatsNode:
 
     def prestats(self, project_dir: str, threshold: float = 0.2):
         try:
+            if _is_upstream_error(project_dir):
+                print(f"[TBSS 4 Prestats] Upstream error: {project_dir}")
+                return (project_dir, project_dir, project_dir)
             proj = Path(project_dir).expanduser().resolve()
             if not proj.exists() or not proj.is_dir():
                 err = f"Project directory not found: {project_dir}"
                 print(f"[TBSS 4 Prestats] {err}")
-                return (err, err)
+                return (err, err, err)
 
             # ── Block 1+2: hash on proj stats dir mtime + threshold, check cache ──
             _stats_dir = proj / "stats"
@@ -69,11 +72,12 @@ class TBSS4PrestatsNode:
             _param_hash = CacheManager.compute_param_hash(_params)
             _cache_path = proj / ".diffyui_tbss_cache.json"
             _all_fa_skel_pre = str(_stats_dir / "all_FA_skeletonised.nii.gz")
-            _expected = [_all_fa_skel_pre]
+            _mean_fa_skel_pre = str(_stats_dir / "mean_FA_skeleton.nii.gz")
+            _expected = [_all_fa_skel_pre, _mean_fa_skel_pre]
             _is_hit, _cached = CacheManager.check_cache(_cache_path, "TBSS4Prestats", _param_hash, _expected)
             if _is_hit:
                 print("[TBSS 4 Prestats] Cache hit — skipping.")
-                return (str(proj), _cached[0])
+                return (str(proj), _cached[0], _cached[1])
 
             executor = get_executor("fsl")
             # FSL tbss_4_prestats takes threshold as argument
@@ -89,15 +93,19 @@ class TBSS4PrestatsNode:
             all_fa_skel = stats_dir / "all_FA_skeletonised.nii.gz"
             if not all_fa_skel.exists():
                 all_fa_skel = proj / "all_FA_skeletonised.nii.gz"
+            mean_fa_skel = stats_dir / "mean_FA_skeleton.nii.gz"
+            if not mean_fa_skel.exists():
+                mean_fa_skel = proj / "mean_FA_skeleton.nii.gz"
 
             print(f"[TBSS 4 Prestats] Success. project_dir={proj}")
 
             # ── Block 3: update cache ──
-            CacheManager.update_cache(_cache_path, "TBSS4Prestats", _param_hash, _params, [str(all_fa_skel)])
+            CacheManager.update_cache(_cache_path, "TBSS4Prestats", _param_hash, _params,
+                                      [str(all_fa_skel), str(mean_fa_skel)])
 
-            return (str(proj), str(all_fa_skel))
+            return (str(proj), str(all_fa_skel), str(mean_fa_skel))
 
         except Exception as e:
             err = f"Error: {e}"
             print(f"[TBSS 4 Prestats] {err}")
-            return (err, err)
+            return (err, err, err)

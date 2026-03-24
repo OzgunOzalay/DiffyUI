@@ -6,6 +6,7 @@ from .bids_loader import BIDSLoaderNode
 from .subject_selector import SubjectSelectorNode
 from .subject_bucket import SubjectBucketNode
 from .subject_iterator import SubjectIteratorNode
+from .subject_batch_runner import SubjectBatchRunnerNode
 from .brain_mask import DWIBrainMaskNode
 from .denoising import DWIDenoiseNode
 from .extract_b0 import ExtractB0Node
@@ -30,6 +31,7 @@ NODE_CLASS_MAPPINGS = {
     "SubjectSelector": SubjectSelectorNode,
     "SubjectBucket": SubjectBucketNode,
     "SubjectIterator": SubjectIteratorNode,
+    "SubjectBatchRunner": SubjectBatchRunnerNode,
     "DWIBrainMask": DWIBrainMaskNode,
     "DWIDenoise": DWIDenoiseNode,
     "ExtractB0": ExtractB0Node,
@@ -55,6 +57,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SubjectSelector": "Subject Selector",
     "SubjectBucket": "Subject Bucket",
     "SubjectIterator": "Subject Iterator",
+    "SubjectBatchRunner": "Subject Batch Runner",
     "DWIBrainMask": "DWI Brain Mask",
     "DWIDenoise": "DWI Denoise",
     "ExtractB0": "Extract B0",
@@ -74,5 +77,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "TBSS3Postreg": "TBSS 3 Postreg",
     "TBSS4Prestats": "TBSS 4 Prestats",
 }
+
+WEB_DIRECTORY = "./web"
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']

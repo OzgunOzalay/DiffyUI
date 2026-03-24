@@ -74,9 +74,9 @@ class DWIBrainMaskNode:
     DESCRIPTION = "Extract brain mask from DWI data using FSL BET. Extracts b0 volume and creates binary brain mask."
 
     @classmethod
-    def IS_CHANGED(cls, dwi_file, fractional_intensity=0.2, vertical_gradient=0.0,
+    def IS_CHANGED(cls, dwi_file="", fractional_intensity=0.2, vertical_gradient=0.0,
                    radius=45, center_of_gravity="", robust=True, reduce_bias=False,
-                   output_brain=False):
+                   output_brain=False, **kwargs):
         """Re-run only when inputs actually change."""
         try:
             from ._import_utils import CacheManager

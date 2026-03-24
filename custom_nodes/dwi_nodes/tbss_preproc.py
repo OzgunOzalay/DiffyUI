@@ -4,7 +4,7 @@ TBSS 1 Preproc Node - FSL tbss_1_preproc: scale/crop FA, create FA/ and origdata
 
 from pathlib import Path
 
-from ._import_utils import get_executor, CacheManager
+from ._import_utils import get_executor, CacheManager, _is_upstream_error
 
 
 class TBSS1PreprocNode:
@@ -57,9 +57,12 @@ class TBSS1PreprocNode:
 
     def preproc(self, fa_directory: str, pattern: str = "*FA*.nii.gz"):
         try:
+            if _is_upstream_error(fa_directory):
+                print(f"[TBSS 1 Preproc] Upstream error: {fa_directory}")
+                return (fa_directory,)
             proj = Path(fa_directory).expanduser().resolve()
             if not proj.exists() or not proj.is_dir():
-                err = f"FA directory not found or not a directory: {fa_directory}"
+                err = f"FA directory not found: {fa_directory}"
                 print(f"[TBSS 1 Preproc] {err}")
                 return (err,)
 

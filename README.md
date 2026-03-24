@@ -89,24 +89,31 @@ DiffyUI/
 ├── requirements.txt            # Python dependencies
 ├── custom_nodes/               # ComfyUI custom nodes directory
 │   ├── dwi_nodes/              # DWI processing nodes
-│   │   ├── bids_loader.py     # BIDS dataset loader
-│   │   ├── subject_selector.py # Subject selection
-│   │   ├── subject_bucket.py   # Subject data container
-│   │   ├── subject_iterator.py # Batch processing iterator
-│   │   ├── brain_mask.py       # Brain mask extraction (FSL BET)
-│   │   ├── denoising.py        # Denoising node (MRtrix3)
-│   │   ├── eddy_correction.py  # Eddy correction (FSL)
-│   │   ├── bias_correction.py  # Bias correction (ANTs)
-│   │   ├── tensor_fitting.py   # Tensor fitting (legacy)
-│   │   ├── dtifit.py           # DTI fitting (FSL dtifit - comprehensive)
-│   │   ├── tractography.py     # Tractography
-│   │   ├── tbss_*.py           # TBSS pipeline nodes (5 nodes)
-│   │   └── nifti_preview.py    # NIfTI file preview
+│   │   ├── bids_loader.py          # BIDS dataset loader
+│   │   ├── subject_selector.py     # Subject selection by ID
+│   │   ├── subject_bucket.py       # Subject data container / pass-through validator
+│   │   ├── subject_iterator.py     # Manual index-based subject iterator
+│   │   ├── subject_batch_runner.py # Automatic sequential batch processing
+│   │   ├── brain_mask.py           # Brain mask extraction (FSL BET)
+│   │   ├── denoising.py            # Denoising node (MRtrix3)
+│   │   ├── eddy_correction.py      # Eddy correction (FSL)
+│   │   ├── bias_correction.py      # Bias correction (ANTs)
+│   │   ├── tensor_fitting.py       # Tensor fitting (legacy)
+│   │   ├── dtifit.py               # DTI fitting (FSL dtifit - comprehensive)
+│   │   ├── tractography.py         # Tractography
+│   │   ├── tbss_fa_collector.py    # Collect FA maps for TBSS
+│   │   ├── tbss_preproc.py         # TBSS step 1: preprocess FA
+│   │   ├── tbss_reg.py             # TBSS step 2: nonlinear registration
+│   │   ├── tbss_postreg.py         # TBSS step 3: apply warps, mean FA
+│   │   ├── tbss_prestats.py        # TBSS step 4: threshold skeleton, project FA
+│   │   ├── nifti_preview.py        # NIfTI preview + FSLeyes button + skeleton overlay
+│   │   └── web/
+│   │       └── nifti_preview.js    # Frontend: Open in FSLeyes button
 │   └── utils/                  # Utility modules
 │       ├── bids_handler.py     # BIDS format handling
-│       ├── docker_executor.py  # System command executor (renamed from docker_executor)
+│       ├── system_executor.py  # FSL/MRtrix3/ANTs command executor
 │       ├── file_manager.py     # File I/O utilities
-│       └── visualization.py    # QC visualization helpers
+│       └── cache_manager.py    # Node output caching
 └── examples/                   # Example workflow files
 ```
 
@@ -117,6 +124,9 @@ Loads BIDS-formatted datasets and provides access to DWI and anatomical files.
 
 ### Subject Selector & Subject Bucket
 Organize and select individual subjects for processing.
+
+### Subject Batch Runner
+Automatically processes all subjects sequentially without manual intervention. Maintains state in `~/.diffyui/batch_state.json` and re-queues the workflow via the ComfyUI HTTP API after each subject completes. State auto-resets when the subject list changes. Toggle `reset_batch` to restart from subject 0.
 
 ### DWI Brain Mask
 Extracts brain mask from DWI data using FSL BET on the b0 volume.
@@ -134,13 +144,13 @@ Correct bias field using ANTs N4BiasFieldCorrection.
 Fit diffusion tensor model (DTI) to DWI data using FSL or MRtrix3.
 
 ### DTIfit (FSL)
-Comprehensive FSL dtifit wrapper with all standard outputs (FA, MD, MO, L1/L2/L3, V1/V2/V3, S0). Supports weighted least squares, tensor saving, SSE output, and gradient nonlinearity correction. See `custom_nodes/dwi_nodes/DTIFIT_NODE_GUIDE.md` for details.
+Comprehensive FSL dtifit wrapper with all standard outputs (FA, MD, MO, L1/L2/L3, V1/V2/V3, S0). Supports weighted least squares, tensor saving, SSE output, and gradient nonlinearity correction.
 
 ### DWI Tractography
 Perform fiber tracking (tractography) using MRtrix3 or FSL.
 
 ### NIfTI Preview
-Preview NIfTI files with 3-panel views (axial, coronal, sagittal).
+Preview NIfTI files with 3-panel views (axial, coronal, sagittal). Includes an **Open in FSLeyes** button that launches FSLeyes with the current file after the node has executed. When the filename contains `skeleton`, the preview automatically renders a green overlay on the skull-stripped MNI152 T1 1mm brain template (`MNI152_T1_1mm_brain.nii.gz` from `$FSLDIR/data/standard/`).
 
 ### Brain 3D Viewer
 Converts a brain NIfTI (e.g. from DWI Brain Mask) into a 3D mesh (OBJ or STL) using marching cubes and writes it to `output/3d/` and to `input/3d/brain_mesh_preview.{obj|stl}`. **Connect its `mesh_path` output to "Preview 3D & Animation" (3d category)** so the node runs and the mesh is shown. Use **"Queue Prompt"** (main run button) to run the full workflow; if you use "Run this node" on another branch only, the 3D branch will not run. If you use "Load 3D & Animation" instead, refresh the page after running once so the dropdown lists `3d/brain_mesh_preview.obj`.
@@ -150,6 +160,19 @@ Converts a brain NIfTI (e.g. from DWI Brain Mask) into a 3D mesh (OBJ or STL) us
 **Preview 3D node looks empty but the mesh appears in the Assets tab:** Yes, it’s weird — the node that’s supposed to show the 3D preview doesn’t show it inline, while the same result appears in the Assets/Preview tab. The backend sends the same data (the `model_file` path) in both cases; the ComfyUI frontend is what decides where to render the 3D viewer. Right now it appears to draw the 3D view in the Assets area but not inside the Preview 3D & Animation node box. So this is a **frontend/UX limitation**, not an issue with our node or path. Workaround: use the **Assets** (or Preview) tab and open the 3D asset there (e.g. zoom in) to view the brain. A proper fix would be in the ComfyUI client so that the Preview 3D node’s inline widget shows the same 3D view.
 
 **Brain orientation looks tilted:** NIfTI uses RAS (Z = superior); most 3D UIs use **Y-up**. Use the node option **viewer_up: "Y-up (ComfyUI / standard 3D)"** (default) so the brain is exported right-way-up. You can also try the viewer’s **Up Direction** (e.g. Y, Z, or Original) if you keep **viewer_up: "RAS (no change)"**.
+
+### TBSS Pipeline
+Five nodes implement FSL's Tract-Based Spatial Statistics workflow:
+
+| Node | FSL command | Key outputs |
+|---|---|---|
+| TBSS FA Collector | — | `fa_directory` (symlinks FA maps) |
+| TBSS 1 Preproc | `tbss_1_preproc` | `project_dir` |
+| TBSS 2 Reg | `tbss_2_reg` | `project_dir` |
+| TBSS 3 Postreg | `tbss_3_postreg` | `project_dir`, `mean_fa_path`, `mean_fa_skeleton_path` |
+| TBSS 4 Prestats | `tbss_4_prestats` | `project_dir`, `all_fa_skeletonised_path`, `mean_fa_skeleton_path` |
+
+Connect them in sequence: FA Collector → TBSS 1 → TBSS 2 → TBSS 3 → TBSS 4. All nodes cache their outputs and detect upstream errors to avoid cascading failures. TBSS 2 Reg handles partial re-runs gracefully (detects completed warp files and skips re-registration).
 
 ### NIfTI Stats
 Runs **fslstats** (FSL) or **mrinfo** (MRtrix) on an input NIfTI image and outputs **structured text** with common metrics and stats (e.g. mean, std, min, max, volume, dimensions). The output is LLM-friendly (markdown-style key-value) and can be connected to **Preview as Text** (utils category) to view, or fed to an LLM downstream. Input: **image** (path to .nii or .nii.gz). Optional: **tool** (fslstats or mrinfo).
