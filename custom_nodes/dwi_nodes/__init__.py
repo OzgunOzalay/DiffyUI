@@ -24,6 +24,17 @@ from .tbss_preproc import TBSS1PreprocNode
 from .tbss_reg import TBSS2RegNode
 from .tbss_postreg import TBSS3PostregNode
 from .tbss_prestats import TBSS4PrestatsNode
+from .fba_prep import FBAPrepNode
+from .fba_subject1 import FBASubject1Node
+from .fba_response_avg import FBAResponseAvgNode
+from .fba_subject2 import FBASubject2Node
+from .fba_template_prep import FBATemplatePrepNode
+from .fba_template_build import FBATemplateBuildNode
+from .fba_subject3a import FBASubject3aNode
+from .fba_template_mask import FBATemplateMaskNode
+from .fba_subject3b import FBASubject3bNode
+from .fba_logfc_fdc import FBALogFCFDCNode
+from .fba_group import FBAGroupNode
 
 NODE_CLASS_MAPPINGS = {
     "BIDSLoader": BIDSLoaderNode,
@@ -48,6 +59,17 @@ NODE_CLASS_MAPPINGS = {
     "TBSS2Reg": TBSS2RegNode,
     "TBSS3Postreg": TBSS3PostregNode,
     "TBSS4Prestats": TBSS4PrestatsNode,
+    "FBAPrep": FBAPrepNode,
+    "FBASubject1": FBASubject1Node,
+    "FBAResponseAvg": FBAResponseAvgNode,
+    "FBASubject2": FBASubject2Node,
+    "FBATemplatePrep": FBATemplatePrepNode,
+    "FBATemplateBuild": FBATemplateBuildNode,
+    "FBASubject3a": FBASubject3aNode,
+    "FBATemplateMask": FBATemplateMaskNode,
+    "FBASubject3b": FBASubject3bNode,
+    "FBALogFCFDC": FBALogFCFDCNode,
+    "FBAGroup": FBAGroupNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -73,6 +95,17 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "TBSS2Reg": "TBSS 2 Reg",
     "TBSS3Postreg": "TBSS 3 Postreg",
     "TBSS4Prestats": "TBSS 4 Prestats",
+    "FBAPrep": "FBA Prep",
+    "FBASubject1": "FBA Subject 1 (Upsample + Response)",
+    "FBAResponseAvg": "FBA Response Average",
+    "FBASubject2": "FBA Subject 2 (FOD + Normalise)",
+    "FBATemplatePrep": "FBA Template Prep",
+    "FBATemplateBuild": "FBA Template Build",
+    "FBASubject3a": "FBA Subject 3a (Register + Warp Mask)",
+    "FBATemplateMask": "FBA Template Mask",
+    "FBASubject3b": "FBA Subject 3b (Fixels + FD + FC)",
+    "FBALogFCFDC": "FBA Log FC + FDC",
+    "FBAGroup": "FBA Group (Tractography + Smooth)",
 }
 
 WEB_DIRECTORY = "./web"
