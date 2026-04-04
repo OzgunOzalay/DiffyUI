@@ -15,7 +15,6 @@ from .eddy_correction import DWIEddyCorrectionNode
 from .bias_correction import DWIBiasCorrectionNode
 from .tensor_fitting import DWITensorFittingNode
 from .dtifit import DTIfitNode
-from .tractography import DWITractographyNode
 from .nifti_preview import NIfTIPreviewNode
 from .brain_3d_viewer import Brain3DViewerNode
 from .nifti_stats import NIfTIStatsNode
@@ -40,7 +39,6 @@ NODE_CLASS_MAPPINGS = {
     "DWIBiasCorrection": DWIBiasCorrectionNode,
     "DWITensorFitting": DWITensorFittingNode,
     "DTIfit": DTIfitNode,
-    "DWITractography": DWITractographyNode,
     "NIfTIPreview": NIfTIPreviewNode,
     "Brain3DViewer": Brain3DViewerNode,
     "NIfTIStats": NIfTIStatsNode,
@@ -66,7 +64,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "DWIBiasCorrection": "DWI Bias Correction",
     "DWITensorFitting": "DWI Tensor Fitting",
     "DTIfit": "DTIfit (FSL)",
-    "DWITractography": "DWI Tractography",
     "NIfTIPreview": "NIfTI Preview",
     "Brain3DViewer": "Brain 3D Viewer",
     "NIfTIStats": "NIfTI Stats",

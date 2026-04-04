@@ -51,7 +51,7 @@ class ExtractB0Node:
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("b0_file",)
     FUNCTION = "extract_b0"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/Preprocessing"
     OUTPUT_NODE = True
     DESCRIPTION = "Extract B0 volume (first volume) from 4D DWI data using FSL fslroi."
     

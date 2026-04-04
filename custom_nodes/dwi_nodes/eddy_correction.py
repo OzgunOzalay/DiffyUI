@@ -86,7 +86,7 @@ class DWIEddyCorrectionNode:
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("corrected_dwi", "rotated_bvecs")
     FUNCTION = "eddy_correct"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/Preprocessing"
     OUTPUT_NODE = True
     DESCRIPTION = "Eddy current and motion correction using FSL eddy (prefers CUDA) with topup. Automatically frees GPU memory before running eddy_cuda for optimal performance. Processes AP-phase DWI only (single file); comma-separated inputs use first path only. Outputs to BIDS derivatives (e.g. derivatives/diffyui/sub-XX/dwi/Eddy/)."
 

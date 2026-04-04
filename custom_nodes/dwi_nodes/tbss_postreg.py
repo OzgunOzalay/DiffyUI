@@ -31,7 +31,7 @@ class TBSS3PostregNode:
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("project_dir", "mean_fa_path", "mean_fa_skeleton_path")
     FUNCTION = "postreg"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/TBSS"
     OUTPUT_NODE = True
     DESCRIPTION = "TBSS step 3: apply warps, create mean FA and mean FA skeleton. Outputs paths for preview/stats."
 

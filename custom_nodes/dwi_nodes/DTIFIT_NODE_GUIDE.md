@@ -29,7 +29,7 @@ The DTIfit node wraps FSL's `dtifit` command for fitting a diffusion tensor mode
 
 ### Return Values
 | Output | Description | Filename Pattern |
-|--------|-------------|------------------|
+|--------|-------------|----------------|
 | `fa_map` | Fractional anisotropy (0=isotropic, 1=stick-like) | `{basename}_FA.nii.gz` |
 | `md_map` | Mean diffusivity | `{basename}_MD.nii.gz` |
 | `output_dir` | Directory containing all outputs | `derivatives/diffyui/{subject}/dwi/DTI/` |
@@ -68,9 +68,9 @@ BIDS Loader → Subject Selector
                 ↓
 Extract B0 → Brain Mask
                 ↓
-Topup Correction → Eddy Correction → DTIfit → TBSS / Tractography
+Topup Correction → Eddy Correction → DTIfit → TBSS
                                         ↓
-                                    NIfTI Preview (FA map)
+   	      	        	NIfTI Preview (FA map)
 ```
 
 ### Example Connection
@@ -86,7 +86,7 @@ Brain Mask:
 DTIfit:
   - fa_map → NIfTI Preview (visualize)
   - fa_map → TBSS FA Collector (group analysis)
-  - v1_map → Tractography (fiber orientation)
+  - v1_map → TBSS FA Collector (group analysis)
 ```
 
 ## Notes
@@ -137,5 +137,4 @@ If you have a gradient nonlinearity tensor file from your scanner:
 ## See Also
 - **FSL Documentation:** https://fsl.fmrib.ox.ac.uk/fsl/docs/diffusion/dtifit.html
 - **TBSS nodes:** Use FA output for tract-based spatial statistics
-- **Tractography nodes:** Use V1 output for seed-based fiber tracking
 - **Original Tensor Fitting node:** `DWITensorFitting` (older node, supports MRtrix3)

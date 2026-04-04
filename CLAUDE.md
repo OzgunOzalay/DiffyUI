@@ -43,7 +43,7 @@ pip install -r requirements.txt   # DWI node dependencies only
 ```
 BIDSLoader → SubjectSelector/Bucket → [preprocessing chain] → derivatives/diffyui/
 ```
-Preprocessing order: BrainMask → Denoise → ExtractB0 → TopupCorrection → EddyCorrection → BiasCorrection → TensorFitting/DTIfit → Tractography.
+Preprocessing order: BrainMask → Denoise → ExtractB0 → TopupCorrection → EddyCorrection → BiasCorrection → TensorFitting/DTIfit.
 
 ### Node Structure Convention
 Every node class must define:
@@ -59,7 +59,7 @@ Every node class must define:
 4. Register in `custom_nodes/dwi_nodes/__init__.py`.
 
 ### Configuration
-`config/node_config.yml` holds default parameters for denoising, eddy, bias correction, tensor fitting, and tractography. Nodes read this at runtime for their defaults.
+`config/node_config.yml` holds default parameters for denoising, eddy, bias correction, and tensor fitting. Nodes read this at runtime for their defaults.
 
 ### TBSS Pipeline
 Five dedicated nodes (`tbss_*.py`) implement FSL's TBSS workflow: `TBSS1Preproc → TBSS2Reg → TBSS3Postreg → TBSS4Prestats`, plus `TBSSFACollector` for gathering FA maps across subjects.

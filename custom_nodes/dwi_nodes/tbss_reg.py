@@ -30,7 +30,7 @@ class TBSS2RegNode:
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("project_dir",)
     FUNCTION = "reg"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/TBSS"
     OUTPUT_NODE = True
     DESCRIPTION = "TBSS step 2: non-linear registration of all FA images to standard space (-T template or -n midpoint)."
 

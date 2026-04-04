@@ -7,7 +7,7 @@ DiffyUI extends ComfyUI with custom nodes for diffusion-weighted imaging (DWI) a
 - **Interactive Node-Based Workflows**: Build DWI processing pipelines visually in ComfyUI's web interface
 - **BIDS Support**: Works with BIDS-formatted datasets (expects `anat/` and `dwi/` folders)
 - **System Tools Integration**: Uses locally installed FSL, MRtrix3, and ANTs tools
-- **Incremental Development**: Start with denoising, then add eddy correction, bias correction, tensor fitting, and tractography
+- **Incremental Development**: Start with denoising, then add eddy correction, bias correction, and tensor fitting
 - **Extensible**: Nodes can be modified and extended later by editing Python code
 
 ## Architecture
@@ -100,7 +100,6 @@ DiffyUI/
 │   │   ├── bias_correction.py      # Bias correction (ANTs)
 │   │   ├── tensor_fitting.py       # Tensor fitting (legacy)
 │   │   ├── dtifit.py               # DTI fitting (FSL dtifit - comprehensive)
-│   │   ├── tractography.py         # Tractography
 │   │   ├── tbss_fa_collector.py    # Collect FA maps for TBSS
 │   │   ├── tbss_preproc.py         # TBSS step 1: preprocess FA
 │   │   ├── tbss_reg.py             # TBSS step 2: nonlinear registration
@@ -146,8 +145,8 @@ Fit diffusion tensor model (DTI) to DWI data using FSL or MRtrix3.
 ### DTIfit (FSL)
 Comprehensive FSL dtifit wrapper with all standard outputs (FA, MD, MO, L1/L2/L3, V1/V2/V3, S0). Supports weighted least squares, tensor saving, SSE output, and gradient nonlinearity correction.
 
-### DWI Tractography
-Perform fiber tracking (tractography) using MRtrix3 or FSL.
+### DTIfit (FSL)
+Comprehensive FSL dtifit wrapper with all standard outputs (FA, MD, MO, L1/L2/L3, V1/V2/V3, S0). Supports weighted least squares, tensor saving, SSE output, and gradient nonlinearity correction.
 
 ### NIfTI Preview
 Preview NIfTI files with 3-panel views (axial, coronal, sagittal). Includes an **Open in FSLeyes** button that launches FSLeyes with the current file after the node has executed. When the filename contains `skeleton`, the preview automatically renders a green overlay on the skull-stripped MNI152 T1 1mm brain template (`MNI152_T1_1mm_brain.nii.gz` from `$FSLDIR/data/standard/`).

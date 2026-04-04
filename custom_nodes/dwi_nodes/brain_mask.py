@@ -69,7 +69,7 @@ class DWIBrainMaskNode:
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("brain_mask", "extracted_brain")
     FUNCTION = "extract_mask"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/Preprocessing"
     OUTPUT_NODE = True
     DESCRIPTION = "Extract brain mask from DWI data using FSL BET. Extracts b0 volume and creates binary brain mask."
 

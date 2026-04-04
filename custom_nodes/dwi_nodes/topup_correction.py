@@ -62,7 +62,7 @@ class DWITopupCorrectionNode:
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("corrected_dwi", "topup_field", "acqp_file")
     FUNCTION = "topup_correct"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/Preprocessing"
     OUTPUT_NODE = True
     DESCRIPTION = "Correct susceptibility-induced distortions using FSL topup with AP/PA B0 pairs."
     

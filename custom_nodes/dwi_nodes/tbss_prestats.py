@@ -36,7 +36,7 @@ class TBSS4PrestatsNode:
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("project_dir", "all_fa_skeletonised_path", "mean_fa_skeleton_path")
     FUNCTION = "prestats"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/TBSS"
     OUTPUT_NODE = True
     DESCRIPTION = "TBSS step 4: threshold mean FA skeleton and project each subject's FA onto it. Outputs 4D all_FA_skeletonised and mean_FA_skeleton paths."
 

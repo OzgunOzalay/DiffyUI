@@ -70,7 +70,7 @@ class DTIfitNode:
     RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING")
     RETURN_NAMES = ("fa_map", "v1_map", "md_map", "mo_map", "s0_map", "l1_map", "l2_map", "l3_map", "v2_map", "v3_map", "fa_directory")
     FUNCTION = "run_dtifit"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/Preprocessing"
     OUTPUT_NODE = True
     DESCRIPTION = "FSL dtifit: Fit diffusion tensor model at each voxel. Outputs FA, V1-V3, MD, MO, S0, L1-L3. Requires eddy-corrected DWI, mask, bvecs, bvals."
 

@@ -55,7 +55,7 @@ class DWITensorFittingNode:
     RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING")
     RETURN_NAMES = ("fa_map", "md_map", "ad_map", "rd_map", "tensor")
     FUNCTION = "fit_tensor"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/Preprocessing"
     OUTPUT_NODE = True
     DESCRIPTION = "Fit diffusion tensor model (DTI) to DWI data"
 

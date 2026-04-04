@@ -36,7 +36,7 @@ class TBSSFACollectorNode:
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("fa_directory",)
     FUNCTION = "collect_fa"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/TBSS"
     OUTPUT_NODE = True
     DESCRIPTION = "Gather FA images from BIDS derivatives/diffyui into one directory for TBSS. Connect bids_dataset (and optionally all_subject_ids) from BIDS Loader."
 

@@ -33,7 +33,7 @@ class TBSS1PreprocNode:
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("project_dir",)
     FUNCTION = "preproc"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/TBSS"
     OUTPUT_NODE = True
     DESCRIPTION = "TBSS step 1: preprocess FA images (scale, crop, remove outer slices). Creates FA/ and origdata/ in the project directory."
 

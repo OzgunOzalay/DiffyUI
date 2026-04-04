@@ -96,7 +96,7 @@ class DWIDenoiseNode:
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("denoised_dwi", "noise_map")
     FUNCTION = "denoise"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/Preprocessing"
     OUTPUT_NODE = True
     DESCRIPTION = "Denoise DWI data using MRtrix3 dwidenoise (Marchenko-Pastur PCA). Must be performed as the first step of the image processing pipeline."
     

@@ -61,7 +61,7 @@ class DWIBiasCorrectionNode:
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("bias_corrected", "bias_field")
     FUNCTION = "bias_correct"
-    CATEGORY = "DWI"
+    CATEGORY = "DWI/Preprocessing"
     OUTPUT_NODE = True
     DESCRIPTION = "Bias field correction using ANTs N4BiasFieldCorrection"
 
