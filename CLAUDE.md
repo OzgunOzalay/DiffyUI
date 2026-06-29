@@ -43,12 +43,16 @@ SubjectBatchRunner  [emits BIDS_SUBJECT per run, re-queues automatically]
     ↓
 DWIPreprocPack  [unpacks BIDS_SUBJECT → individual file paths]
     ↓
-BrainMask → Denoise → ExtractB0 → Topup → Eddy → BiasCorrection → DTIfit
+BrainMask → Denoise → GibbsUnringing → ExtractB0 → Topup → Eddy → EddyQC
+    → BiasCorrection → DTIfit (single-shell) / CSD → Tractography (multi-shell)
+                     → DKIFit (multi-shell)
     ↓
-derivatives/diffyui/<subject_id>/
+<subject_id>/derivatives/diffyui/
 ```
 
-For derived outputs (TBSS FA maps, FBA FODs etc.), use `DerivedFilePicker` which picks a file from `derivatives/diffyui/{subject}/` by glob pattern.
+For derived outputs (TBSS FA maps, FBA FODs etc.), use `DerivedFilePicker` which picks a file from `<subject_id>/derivatives/diffyui/` by glob pattern.
+
+**Output path convention:** All writer nodes use `bids_handler.get_derivatives_path(subject_id, "diffyui")` → `<bids_root>/<subject_id>/derivatives/diffyui/`. This places derivatives inside each subject's folder (not at `<bids_root>/derivatives/`). Readers (`_is_done`, `_check_completion`, `build_bids_subject`) all use the same convention.
 
 ### BIDS_SUBJECT Type
 `BIDS_SUBJECT` (`custom_nodes/dwi_nodes/bids_subject_type.py`) is a custom ComfyUI type — a Python dict built by `build_bids_subject()` that carries all BIDS paths for one subject:
@@ -80,24 +84,28 @@ Every node class must define:
 1. Create `custom_nodes/dwi_nodes/my_node.py` following the convention above.
 2. Accept `BIDS_SUBJECT` as input (via a pack node) rather than raw STRING file paths where possible — this keeps the BIDS-first contract intact.
 3. Use `system_executor.py` for any external tool calls.
-4. Save outputs under `derivatives/diffyui/<subject_id>/` via `bids_handler.py`.
-5. Register in `custom_nodes/dwi_nodes/__init__.py`.
+4. Save outputs under `<subject_id>/derivatives/diffyui/` via `bids_handler.get_derivatives_path(subject_id, "diffyui")`.
+5. Register in `custom_nodes/dwi_nodes/__init__.py` (wrap import in try/except for nodes with optional heavy deps like DIPY).
 
-### Node Inventory (36 nodes)
+### Node Inventory (40 nodes)
 
 **Entry / Batch:** BIDSLoader, SubjectBatchRunner
 
 **Workflow Packs:** DWIPreprocPack, DerivedFilePicker
 
-**Preprocessing:** DWIBrainMask, DWIDenoise, ExtractB0, DWITopupCorrection, DWIEddyCorrection, DWIBiasCorrection, DTIfit
+**Preprocessing:** DWIBrainMask, DWIDenoise, GibbsUnringing, ExtractB0, DWITopupCorrection,
+DWIEddyCorrection, EddyQC, DWIBiasCorrection, DTIfit, CSD (multi-tissue), DKIFit
 
-**Tractography:** DWITractography
+**Tractography:** DWITractography (takes WM FOD from CSD; MRtrix3 tckgen + optional tcksift2)
 
 **QC / Visualisation:** NIfTIPreview, Brain3DViewer (display name: Brain 3D Mesh), NIfTIStats
 
 **TBSS:** TBSSFACollector, TBSS1Preproc, TBSS2Reg, TBSS3Postreg, TBSS4Prestats
 
 **FBA:** FBAPrep, FBASubject1, FBAResponseAvg, FBASubject2, FBATemplatePrep, FBATemplateBuild, FBASubject3a, FBATemplateMask, FBASubject3b, FBALogFCFDC, FBAGroup
+
+**Multi-shell requirements:** CSD and DKIFit both require ≥2 non-zero b-value shells and will
+return an error string (not raise) if the data is single-shell.
 
 ### Configuration
 `config/node_config.yml` holds default parameters for denoising, eddy, bias correction, and tensor fitting. Nodes read this at runtime for their defaults.
@@ -112,3 +120,8 @@ Every node class must define:
 - **Separate pack nodes** (not a mode dropdown) — ComfyUI `RETURN_TYPES` are fixed at class definition time and cannot change dynamically based on a widget value.
 - **Docker deferred** — `system_executor.py` is the execution layer; no Docker abstraction yet.
 - **No Ollama/local-LLM nodes** — DeepSeek QC node was removed; it was experimental and not used daily.
+- **CSD is the gateway to tractography** — `DWITractography` now requires a WM FOD from `CSD`, not raw DWI. This enforces the correct pipeline order.
+- **dwidenoise / mrdegibbs accept NIfTI directly** (MRtrix3 3.x) — no NIfTI→MIF round-trips in `denoising.py` or `gibbs_unringing.py`.
+- **EddyQC is non-blocking** — `eddy_quad` failures return an error string; they never stop the batch.
+- **DKI uses DIPY (lazy import)** — `dki_fit.py` imports DIPY inside `run_dki()` so the node loads even if DIPY is not installed; missing DIPY returns a clear error string.
+- **Smoke tests** — `tests/test_nodes.py` covers import + `INPUT_TYPES()` + `IS_CHANGED()` + error-string behaviour for all 4 new nodes; run with `python -m pytest tests/ -v`.

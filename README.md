@@ -41,7 +41,11 @@ DiffyUI/
 │   │   ├── eddy_correction.py      # FSL eddy / eddy_cuda
 │   │   ├── bias_correction.py      # ANTs N4BiasFieldCorrection
 │   │   ├── dtifit.py               # FSL dtifit (FA, MD, MO, L1-3, V1-3, S0)
-│   │   ├── tractography.py         # MRtrix3 tckgen / FSL probtrackx2
+│   │   ├── gibbs_unringing.py      # MRtrix3 mrdegibbs (Gibbs artefact removal)
+│   │   ├── csd.py                  # Multi-tissue CSD: dwi2response + dwi2fod + mtnormalise
+│   │   ├── eddy_qc.py              # FSL eddy_quad QC report (non-blocking)
+│   │   ├── dki_fit.py              # DKI fitting via DIPY (MK, AK, RK, KFA, FA, MD, AD, RD)
+│   │   ├── tractography.py         # MRtrix3 tckgen (FOD-based) + optional tcksift2
 │   │   ├── nifti_preview.py        # 3-panel slice preview + FSLeyes button
 │   │   ├── brain_3d_viewer.py      # 3D mesh extraction (OBJ/STL)
 │   │   ├── nifti_stats.py          # fslstats / mrinfo text output
@@ -68,6 +72,8 @@ DiffyUI/
 │       └── cache_manager.py        # Node output caching
 └── examples/
     └── workflow_dwi_preprocess.json  # Canonical preprocessing workflow
+└── tests/
+    └── test_nodes.py                 # Smoke tests (25 tests, no tools required)
 ```
 
 ## Data Flow
@@ -85,12 +91,16 @@ DWIPreprocPack                    DerivedFilePicker (for derived outputs)
     │  subject_id, dwi_ap/pa,         │  subject_id, file_path
     │  bvec/bval, t1w                 │
     ▼                                 ▼
-BrainMask → Denoise → ExtractB0     TBSSFACollector → TBSS 1-4
-    → Topup → Eddy → BiasCorrection     or FBA chain
-    → DTIfit (FA, MD, L1-3, V1-3…)
+BrainMask → Denoise → GibbsUnringing → ExtractB0     TBSSFACollector → TBSS 1-4
+    → Topup → Eddy → EddyQC               or FBA chain
+    → BiasCorrection
+    → DTIfit (single-shell: FA, MD, L1-3, V1-3…)
+    → CSD → DWITractography (multi-shell)
+    → DKIFit (multi-shell: MK, AK, RK, KFA…)
 ```
 
-Outputs are always written to `<bids_root>/derivatives/diffyui/<subject_id>/`.
+Outputs are written to `<bids_root>/<subject_id>/derivatives/diffyui/`.
+This path is produced by `bids_handler.get_derivatives_path(subject_id, "diffyui")`.
 
 ## Node Reference
 
@@ -104,7 +114,7 @@ Outputs: `bids_dataset` (STRING), `subject_list` (STRING, comma-separated).
 Processes subjects one at a time. On each run it emits a `BIDS_SUBJECT` bundle for the current subject, saves state to `~/.diffyui/batch_state.json`, and re-queues the workflow for the next subject automatically — before downstream nodes run, so a failure in one subject doesn't stop the batch.
 
 Key options:
-- `completion_check` — glob relative to `derivatives/diffyui/{subject}/`; matching subjects are skipped (e.g. `dwi/DTI/*_FA.nii.gz`)
+- `completion_check` — glob relative to `<subject>/derivatives/diffyui/`; matching subjects are skipped (e.g. `dwi/DTI/*_FA.nii.gz`)
 - `skip_completed` — toggle skip on/off
 - `reset_batch` — toggle to restart from subject 0
 
@@ -118,8 +128,8 @@ Outputs: `subject_id`, `dwi_ap`, `bvec_ap`, `bval_ap`, `dwi_pa`, `bvec_pa`, `bva
 PA phase outputs are empty strings when no reverse-phase data exists.
 
 **Derived File Picker** (`DerivedFilePicker`)
-Picks a processed file from `derivatives/diffyui/{subject}/` using a glob pattern. Use this to feed downstream workflows that need outputs from a previous pipeline stage.
-Input: `subject` (BIDS_SUBJECT), `file_pattern` (glob, e.g. `dwi/DTI/*_FA.nii.gz`).
+Picks a processed file from `<subject>/derivatives/diffyui/` using a glob pattern. Use this to feed downstream workflows that need outputs from a previous pipeline stage.
+Input: `subject` (BIDS_SUBJECT), `file_pattern` (glob, e.g. `dwi/DTI/*_FA.nii.gz` or `dwi/CSD/wm_fod_norm.mif`).
 Outputs: `subject_id`, `file_path`.
 
 ### Preprocessing Nodes (DWI/Preprocessing)
@@ -128,19 +138,30 @@ Outputs: `subject_id`, `file_path`.
 |---|---|---|
 | DWI Brain Mask | FSL BET | `brain_mask`, `extracted_brain` |
 | DWI Denoise | MRtrix3 dwidenoise | `denoised_dwi`, `noise_map` |
+| Gibbs Unringing | MRtrix3 mrdegibbs | `degibbs_dwi` |
 | Extract B0 | MRtrix3 / fslroi | `b0_image` |
 | DWI Topup Correction | FSL topup | `fieldmap`, `corrected_b0` |
 | DWI Eddy Correction | FSL eddy / eddy_cuda | `dwi_corrected`, `bvec_corrected` |
+| Eddy QC | FSL eddy_quad | `qc_report_dir` |
 | DWI Bias Correction | ANTs N4 | `corrected_dwi` |
 | DTIfit (FSL) | FSL dtifit | `fa_map`, `md_map`, `mo_map`, `l1/l2/l3`, `v1/v2/v3`, `s0`, `fa_directory` |
+| CSD (Multi-Tissue) | MRtrix3 dwi2response + dwi2fod + mtnormalise | `wm_fod`, `gm_fod`, `csf_fod`, response txt files |
+| DKI Fit (DIPY) | DIPY DiffusionKurtosisModel | `mk_map`, `ak_map`, `rk_map`, `kfa_map`, `fa_map`, `md_map`, `ad_map`, `rd_map` |
 
 Eddy correction automatically uses `eddy_cuda` (GPU) when available, falling back to `eddy_cpu`. Before launching eddy_cuda, the node unloads ComfyUI models from GPU memory to avoid CUDA contention.
+
+**CSD** and **DKI Fit** require multi-shell data (≥2 non-zero b-value shells). Both return a clear error string if given single-shell data.
+
+**Gibbs Unringing** must run after denoising and before any interpolation (topup/eddy).
+
+**Eddy QC** is non-blocking — `eddy_quad` failures produce an error string and never abort the batch.
 
 ### Tractography (DWI)
 
 **DWI Tractography** (`DWITractography`)
-Whole-brain fiber tracking using MRtrix3 `tckgen` (probabilistic or deterministic) or FSL `probtrackx2`.
-Outputs: `tractography_file`, `connectivity_matrix`.
+Whole-brain fiber tracking using MRtrix3 `tckgen`. Takes the WM FOD image from the **CSD** node as input — not raw DWI. Algorithms: iFOD2 (default), SD_STREAM, Tensor_Det, Tensor_Prob. Optional SIFT2 streamline-weight estimation via `tcksift2`.
+Inputs: `fod_file` (WM FOD from CSD), `mask_file` (brain mask).
+Outputs: `tractogram_file` (.tck), `sift2_weights` (.txt, empty if SIFT2 disabled).
 
 ### QC / Visualisation (DWI)
 
@@ -183,7 +204,7 @@ Feed `bids_dataset` and `subject_list` from `BIDSProjectLoader` directly into `T
         "dwi_pa":  "...", "bvec_pa": "...", "bval_pa": "...",
         "t1w":     "...",
     },
-    "derivatives_root": "/path/to/dataset/derivatives/diffyui/sub-001",
+    "derivatives_root": "/path/to/dataset/sub-001/derivatives/diffyui",
 }
 ```
 
@@ -210,14 +231,14 @@ bids_dataset/
 
 Sessions (`sub-001/ses-01/dwi/`) are detected automatically.
 
-Outputs are written to `bids_dataset/derivatives/diffyui/<subject_id>/`.
+Outputs are written to `bids_dataset/<subject_id>/derivatives/diffyui/`.
 
 ## Adding a New Node
 
 1. Create `custom_nodes/dwi_nodes/my_node.py` — define `INPUT_TYPES`, `RETURN_TYPES`, `RETURN_NAMES`, `FUNCTION`, `CATEGORY`.
 2. Accept `BIDS_SUBJECT` input if the node needs per-subject files; use `DerivedFilePicker` logic to look up derived outputs.
 3. Use `system_executor.py` for all external tool calls.
-4. Write outputs under `derivatives/diffyui/<subject_id>/` via `bids_handler.py`.
+4. Write outputs under `<subject_id>/derivatives/diffyui/` via `bids_handler.get_derivatives_path(subject_id, "diffyui")`.
 5. Register the class in `custom_nodes/dwi_nodes/__init__.py` (both `NODE_CLASS_MAPPINGS` and `NODE_DISPLAY_NAME_MAPPINGS`).
 6. Restart the server.
 
