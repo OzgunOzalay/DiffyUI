@@ -3,22 +3,19 @@ DWI Analysis Custom Nodes for ComfyUI
 """
 
 from .bids_loader import BIDSLoaderNode
-from .subject_selector import SubjectSelectorNode
-from .subject_bucket import SubjectBucketNode
-from .subject_iterator import SubjectIteratorNode
 from .subject_batch_runner import SubjectBatchRunnerNode
+from .workflow_packs import DWIPreprocPack, DerivedFilePicker
 from .brain_mask import DWIBrainMaskNode
 from .denoising import DWIDenoiseNode
 from .extract_b0 import ExtractB0Node
 from .topup_correction import DWITopupCorrectionNode
 from .eddy_correction import DWIEddyCorrectionNode
 from .bias_correction import DWIBiasCorrectionNode
-from .tensor_fitting import DWITensorFittingNode
 from .dtifit import DTIfitNode
 from .nifti_preview import NIfTIPreviewNode
 from .brain_3d_viewer import Brain3DViewerNode
 from .nifti_stats import NIfTIStatsNode
-from .deepseek_qc_supervisor import DeepSeekQCSupervisorNode
+from .tractography import DWITractographyNode
 from .tbss_fa_collector import TBSSFACollectorNode
 from .tbss_preproc import TBSS1PreprocNode
 from .tbss_reg import TBSS2RegNode
@@ -37,28 +34,33 @@ from .fba_logfc_fdc import FBALogFCFDCNode
 from .fba_group import FBAGroupNode
 
 NODE_CLASS_MAPPINGS = {
+    # --- Entry / batch ---
     "BIDSLoader": BIDSLoaderNode,
-    "SubjectSelector": SubjectSelectorNode,
-    "SubjectBucket": SubjectBucketNode,
-    "SubjectIterator": SubjectIteratorNode,
     "SubjectBatchRunner": SubjectBatchRunnerNode,
+    # --- Workflow packs ---
+    "DWIPreprocPack": DWIPreprocPack,
+    "DerivedFilePicker": DerivedFilePicker,
+    # --- Preprocessing ---
     "DWIBrainMask": DWIBrainMaskNode,
     "DWIDenoise": DWIDenoiseNode,
     "ExtractB0": ExtractB0Node,
     "DWITopupCorrection": DWITopupCorrectionNode,
     "DWIEddyCorrection": DWIEddyCorrectionNode,
     "DWIBiasCorrection": DWIBiasCorrectionNode,
-    "DWITensorFitting": DWITensorFittingNode,
     "DTIfit": DTIfitNode,
+    # --- QC / visualisation ---
     "NIfTIPreview": NIfTIPreviewNode,
     "Brain3DViewer": Brain3DViewerNode,
     "NIfTIStats": NIfTIStatsNode,
-    "DeepSeekQCSupervisor": DeepSeekQCSupervisorNode,
+    # --- Tractography ---
+    "DWITractography": DWITractographyNode,
+    # --- TBSS ---
     "TBSSFACollector": TBSSFACollectorNode,
     "TBSS1Preproc": TBSS1PreprocNode,
     "TBSS2Reg": TBSS2RegNode,
     "TBSS3Postreg": TBSS3PostregNode,
     "TBSS4Prestats": TBSS4PrestatsNode,
+    # --- FBA ---
     "FBAPrep": FBAPrepNode,
     "FBASubject1": FBASubject1Node,
     "FBAResponseAvg": FBAResponseAvgNode,
@@ -73,28 +75,33 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "BIDSLoader": "BIDS Loader",
-    "SubjectSelector": "Subject Selector",
-    "SubjectBucket": "Subject Bucket",
-    "SubjectIterator": "Subject Iterator",
+    # --- Entry / batch ---
+    "BIDSLoader": "BIDS Project Loader",
     "SubjectBatchRunner": "Subject Batch Runner",
+    # --- Workflow packs ---
+    "DWIPreprocPack": "DWI Preproc Pack",
+    "DerivedFilePicker": "Derived File Picker",
+    # --- Preprocessing ---
     "DWIBrainMask": "DWI Brain Mask",
     "DWIDenoise": "DWI Denoise",
     "ExtractB0": "Extract B0",
     "DWITopupCorrection": "DWI Topup Correction",
     "DWIEddyCorrection": "DWI Eddy Correction",
     "DWIBiasCorrection": "DWI Bias Correction",
-    "DWITensorFitting": "DWI Tensor Fitting",
     "DTIfit": "DTIfit (FSL)",
+    # --- QC / visualisation ---
     "NIfTIPreview": "NIfTI Preview",
-    "Brain3DViewer": "Brain 3D Viewer",
+    "Brain3DViewer": "Brain 3D Mesh",
     "NIfTIStats": "NIfTI Stats",
-    "DeepSeekQCSupervisor": "DeepSeek QC Supervisor",
+    # --- Tractography ---
+    "DWITractography": "DWI Tractography",
+    # --- TBSS ---
     "TBSSFACollector": "TBSS FA Collector",
     "TBSS1Preproc": "TBSS 1 Preproc",
     "TBSS2Reg": "TBSS 2 Reg",
     "TBSS3Postreg": "TBSS 3 Postreg",
     "TBSS4Prestats": "TBSS 4 Prestats",
+    # --- FBA ---
     "FBAPrep": "FBA Prep",
     "FBASubject1": "FBA Subject 1 (Upsample + Response)",
     "FBAResponseAvg": "FBA Response Average",

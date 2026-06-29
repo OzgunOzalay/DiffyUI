@@ -59,13 +59,23 @@ pip install -r requirements.txt
 echo "Installing DWI node dependencies..."
 pip install "nibabel>=5.0.0" "numpy>=1.24.0" "pybids>=0.16.0" matplotlib Pillow "scikit-image>=0.19.0"
 
-# Create symlink to custom nodes
+# Create symlink: ComfyUI/custom_nodes → <project>/custom_nodes
 cd ..
-mkdir -p ComfyUI/custom_nodes
-if [ ! -L "ComfyUI/custom_nodes/dwi_nodes" ] || [ "$(readlink ComfyUI/custom_nodes/dwi_nodes)" != "$(pwd)/custom_nodes/dwi_nodes" ]; then
-    echo "Creating symlink to custom nodes..."
-    ln -sf "$(pwd)/custom_nodes/dwi_nodes" ComfyUI/custom_nodes/dwi_nodes
-    ln -sf "$(pwd)/custom_nodes/utils" ComfyUI/custom_nodes/utils
+TARGET="$(pwd)/custom_nodes"
+LINK="ComfyUI/custom_nodes"
+CURRENT="$(readlink "$LINK" 2>/dev/null || true)"
+if [ "$CURRENT" != "$TARGET" ]; then
+    echo "Creating custom_nodes symlink → $TARGET"
+    # Remove stale symlink or empty dir; refuse to clobber real directories with content
+    if [ -L "$LINK" ]; then
+        rm "$LINK"
+    elif [ -d "$LINK" ] && [ -z "$(ls -A "$LINK")" ]; then
+        rmdir "$LINK"
+    elif [ -d "$LINK" ]; then
+        echo "ERROR: $LINK is a non-empty directory. Please remove it manually and re-run setup."
+        exit 1
+    fi
+    ln -s "$TARGET" "$LINK"
 fi
 
 # Verify neuroimaging tools are available
