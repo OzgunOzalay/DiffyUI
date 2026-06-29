@@ -76,8 +76,7 @@ class BIDSLoaderNode:
             )
 
         project_info = _read_dataset_description(bids_path)
-        deriv_root = bids_path / "derivatives" / "diffyui"
-        subject_status = _check_completion(subjects, deriv_root, completion_glob)
+        subject_status = _check_completion(subjects, bids_path, completion_glob)
 
         display = _format_display(bids_path, project_info, subjects, subject_status, completion_glob)
 
@@ -103,11 +102,11 @@ def _read_dataset_description(bids_path: Path) -> dict:
     return {}
 
 
-def _check_completion(subjects: list, deriv_root: Path, glob_pattern: str) -> dict:
+def _check_completion(subjects: list, bids_root: Path, glob_pattern: str) -> dict:
     """Return {subject_id: True/False} based on whether the glob matches in derivatives."""
     status = {}
     for sub in subjects:
-        sub_deriv = deriv_root / sub
+        sub_deriv = bids_root / sub / "derivatives" / "diffyui"
         if not glob_pattern.strip():
             status[sub] = sub_deriv.exists()
         else:

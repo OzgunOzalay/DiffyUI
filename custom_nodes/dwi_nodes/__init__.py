@@ -16,6 +16,26 @@ from .nifti_preview import NIfTIPreviewNode
 from .brain_3d_viewer import Brain3DViewerNode
 from .nifti_stats import NIfTIStatsNode
 from .tractography import DWITractographyNode
+try:
+    from .gibbs_unringing import GibbsUnringingNode
+except Exception as _e:
+    print(f"[DiffyUI] Warning: could not load GibbsUnringingNode: {_e}")
+    GibbsUnringingNode = None
+try:
+    from .csd import CSDNode
+except Exception as _e:
+    print(f"[DiffyUI] Warning: could not load CSDNode: {_e}")
+    CSDNode = None
+try:
+    from .eddy_qc import EddyQCNode
+except Exception as _e:
+    print(f"[DiffyUI] Warning: could not load EddyQCNode: {_e}")
+    EddyQCNode = None
+try:
+    from .dki_fit import DKIFitNode
+except Exception as _e:
+    print(f"[DiffyUI] Warning: could not load DKIFitNode: {_e}")
+    DKIFitNode = None
 from .tbss_fa_collector import TBSSFACollectorNode
 from .tbss_preproc import TBSS1PreprocNode
 from .tbss_reg import TBSS2RegNode
@@ -54,6 +74,11 @@ NODE_CLASS_MAPPINGS = {
     "NIfTIStats": NIfTIStatsNode,
     # --- Tractography ---
     "DWITractography": DWITractographyNode,
+    # --- New CORE nodes ---
+    **({} if GibbsUnringingNode is None else {"GibbsUnringing": GibbsUnringingNode}),
+    **({} if CSDNode         is None else {"CSD":            CSDNode}),
+    **({} if EddyQCNode      is None else {"EddyQC":         EddyQCNode}),
+    **({} if DKIFitNode      is None else {"DKIFit":         DKIFitNode}),
     # --- TBSS ---
     "TBSSFACollector": TBSSFACollectorNode,
     "TBSS1Preproc": TBSS1PreprocNode,
@@ -95,6 +120,11 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "NIfTIStats": "NIfTI Stats",
     # --- Tractography ---
     "DWITractography": "DWI Tractography",
+    # --- New CORE nodes ---
+    **({} if GibbsUnringingNode is None else {"GibbsUnringing": "Gibbs Unringing"}),
+    **({} if CSDNode         is None else {"CSD":            "CSD (Multi-Tissue)"}),
+    **({} if EddyQCNode      is None else {"EddyQC":         "Eddy QC (eddy_quad)"}),
+    **({} if DKIFitNode      is None else {"DKIFit":         "DKI Fit (DIPY)"}),
     # --- TBSS ---
     "TBSSFACollector": "TBSS FA Collector",
     "TBSS1Preproc": "TBSS 1 Preproc",

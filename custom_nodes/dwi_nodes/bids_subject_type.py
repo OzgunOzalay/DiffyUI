@@ -15,7 +15,7 @@ Schema:
             "dwi":     str,  "bvec":     str,  "bval":     str,   # single phase
             "t1w":     str,
         },
-        "derivatives_root": str,          # derivatives/diffyui/sub-XXX[/ses-YY]
+        "derivatives_root": str,          # sub-XXX/derivatives/diffyui[/ses-YY]
     }
 """
 
@@ -39,11 +39,11 @@ def build_bids_subject(bids_root: str, subject_id: str) -> dict:
     if session_id:
         dwi_dir = subject_path / session_id / "dwi"
         anat_dir = subject_path / session_id / "anat"
-        deriv_root = bids_path / "derivatives" / "diffyui" / subject_id / session_id
+        deriv_root = bids_path / subject_id / "derivatives" / "diffyui" / session_id
     else:
         dwi_dir = subject_path / "dwi"
         anat_dir = subject_path / "anat"
-        deriv_root = bids_path / "derivatives" / "diffyui" / subject_id
+        deriv_root = bids_path / subject_id / "derivatives" / "diffyui"
 
     files: dict[str, str] = {}
     _scan_dwi(dwi_dir, files)

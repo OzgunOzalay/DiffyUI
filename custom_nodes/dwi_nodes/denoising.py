@@ -202,37 +202,15 @@ class DWIDenoiseNode:
                 print("[DWI Denoise] Cache hit — skipping.")
                 return tuple(_cached)
 
-            # Convert to MIF format for MRtrix3 (if not already)
-            # Handle .nii.gz files correctly - replace both .nii and .gz with .mif
-            if input_dwi.suffix == ".gz" and input_dwi.stem.endswith(".nii"):
-                # For .nii.gz files, remove both .nii and .gz
-                input_mif = input_dwi.parent / f"{input_dwi.stem[:-4]}.mif"
-            else:
-                input_mif = input_dwi.with_suffix(".mif")
-            
-            # For denoised output, create MIF version in same directory
-            denoised_mif = output_dir / f"{input_stem}_denoised.mif"
-            
             print(f"[DWI Denoise] Input DWI: {input_dwi}")
             print(f"[DWI Denoise] Output directory: {output_dir}")
             print(f"[DWI Denoise] Denoised output: {denoised_output}")
-            
-            # Get system executor for MRtrix3
             executor = get_executor("mrtrix")
             
-            # Convert NIfTI to MIF if needed (MRtrix3 prefers MIF)
-            print(f"[DWI Denoise] Converting NIfTI to MIF: {input_dwi} -> {input_mif}")
-            convert_cmd = ["mrconvert", str(input_dwi), str(input_mif), "-force"]
-            return_code, stdout, stderr = executor.execute(convert_cmd)
-            if return_code != 0:
-                raise RuntimeError(f"Failed to convert to MIF: {stderr}")
-            print(f"[DWI Denoise] Conversion complete")
-            
-            # Build dwidenoise command
             denoise_cmd = [
                 "dwidenoise",
-                str(input_mif),
-                str(denoised_mif)
+                str(input_dwi),
+                str(denoised_output),
             ]
             
             # Handle mask file if provided
@@ -262,27 +240,7 @@ class DWIDenoiseNode:
                         break
                 
                 if mask_path:
-                    # Convert mask to MIF if needed (MRtrix3 works with both, but MIF is preferred)
-                    if mask_path.suffix != ".mif":
-                        # Get the base name without .nii.gz or .nii extension
-                        mask_name = mask_path.name
-                        if mask_name.endswith('.nii.gz'):
-                            mask_stem = mask_name[:-7]  # Remove .nii.gz
-                        elif mask_name.endswith('.nii'):
-                            mask_stem = mask_name[:-4]  # Remove .nii
-                        else:
-                            mask_stem = mask_path.stem
-                        
-                        # Convert mask to MIF (use temp location in output dir)
-                        mask_mif = output_dir / f"{mask_stem}_mask.mif"
-                        print(f"[DWI Denoise] Converting mask to MIF: {mask_path} -> {mask_mif}")
-                        convert_mask_cmd = ["mrconvert", str(mask_path), str(mask_mif), "-force"]
-                        return_code, stdout, stderr = executor.execute(convert_mask_cmd)
-                        if return_code != 0:
-                            raise RuntimeError(f"Failed to convert mask to MIF: {stderr}")
-                    else:
-                        mask_mif = mask_path
-                    denoise_cmd.extend(["-mask", str(mask_mif)])
+                    denoise_cmd.extend(["-mask", str(mask_path)])
                     print(f"[DWI Denoise] Using mask: {mask_path}")
                 else:
                     # Mask file specified but not found - warn but continue
@@ -294,10 +252,8 @@ class DWIDenoiseNode:
             
             # Add noise map output
             if output_noise_map and noise_map_output:
-                # Create MIF path for noise map (replace .nii.gz with .mif)
-                noise_map_mif = output_dir / f"{input_stem}_noise.mif"
-                denoise_cmd.extend(["-noise", str(noise_map_mif)])
-                print(f"[DWI Denoise] Noise map will be saved to: {noise_map_mif}")
+                denoise_cmd.extend(["-noise", str(noise_map_output)])
+                print(f"[DWI Denoise] Noise map will be saved to: {noise_map_output}")
             
             # Add rank cutoff (only if specified)
             if rank_cutoff > 0:
@@ -333,40 +289,14 @@ class DWIDenoiseNode:
             
             print(f"[DWI Denoise] Denoising complete")
             
-            # Check if denoised MIF was created
-            if not denoised_mif.exists():
-                raise RuntimeError(f"Denoised output file not found: {denoised_mif}")
-            
-            # Convert back to NIfTI
-            print(f"[DWI Denoise] Converting denoised MIF back to NIfTI: {denoised_mif} -> {denoised_output}")
-            convert_back_cmd = ["mrconvert", str(denoised_mif), str(denoised_output), "-force"]
-            return_code, stdout, stderr = executor.execute(convert_back_cmd)
-            
-            if return_code != 0:
-                print(f"[DWI Denoise] ERROR: Failed to convert back to NIfTI")
-                print(f"[DWI Denoise] stderr: {stderr}")
-                raise RuntimeError(f"Failed to convert back to NIfTI: {stderr}")
-            
             if not denoised_output.exists():
-                raise RuntimeError(f"Denoised NIfTI file not found: {denoised_output}")
-            
+                raise RuntimeError(f"Denoised output not found: {denoised_output}")
             print(f"[DWI Denoise] Denoised DWI saved to: {denoised_output}")
-            
-            # Convert noise map if requested
+
             noise_map_path = ""
-            if output_noise_map and noise_map_output:
-                noise_map_mif = output_dir / f"{input_stem}_noise.mif"
-                if noise_map_mif.exists():
-                    print(f"[DWI Denoise] Converting noise map to NIfTI: {noise_map_mif} -> {noise_map_output}")
-                    convert_noise_cmd = ["mrconvert", str(noise_map_mif), str(noise_map_output), "-force"]
-                    return_code, stdout, stderr = executor.execute(convert_noise_cmd)
-                    if return_code == 0:
-                        noise_map_path = str(noise_map_output)
-                        print(f"[DWI Denoise] Noise map saved to: {noise_map_output}")
-                    else:
-                        print(f"[DWI Denoise] Warning: Failed to convert noise map: {stderr}")
-                else:
-                    print(f"[DWI Denoise] Warning: Noise map MIF file not found: {noise_map_mif}")
+            if output_noise_map and noise_map_output and noise_map_output.exists():
+                noise_map_path = str(noise_map_output)
+                print(f"[DWI Denoise] Noise map: {noise_map_output}")
             
             # Write metadata (if BIDS structure detected)
             if subject_id and bids_root:

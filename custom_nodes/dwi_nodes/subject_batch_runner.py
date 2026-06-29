@@ -117,7 +117,7 @@ class SubjectBatchRunnerNode:
     def _is_done(bids_root: str, subject_id: str, completion_check: str) -> bool:
         if not completion_check.strip():
             return False
-        deriv = Path(bids_root) / "derivatives" / "diffyui" / subject_id
+        deriv = Path(bids_root) / subject_id / "derivatives" / "diffyui"
         return bool(list(deriv.glob(completion_check))) if deriv.exists() else False
 
     # ------------------------------------------------------------------
