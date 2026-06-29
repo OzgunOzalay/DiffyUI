@@ -1,315 +1,240 @@
-# DiffyUI - ComfyUI Extension for DWI Analysis
+# DiffyUI — ComfyUI Extension for DWI Neuroimaging
 
-DiffyUI extends ComfyUI with custom nodes for diffusion-weighted imaging (DWI) analysis, creating an interactive web-based workflow system for neuroimaging. The system wraps FSL, MRtrix3, and ANTs tools as ComfyUI nodes and supports BIDS data organization.
+DiffyUI wraps FSL, MRtrix3, and ANTs as ComfyUI nodes, letting you build and run diffusion-weighted imaging (DWI) analysis pipelines visually in a web interface. All input data must be in **BIDS format** — this is a hard requirement for reproducibility.
 
-## Features
+Web UI runs at **http://localhost:8188**.
 
-- **Interactive Node-Based Workflows**: Build DWI processing pipelines visually in ComfyUI's web interface
-- **BIDS Support**: Works with BIDS-formatted datasets (expects `anat/` and `dwi/` folders)
-- **System Tools Integration**: Uses locally installed FSL, MRtrix3, and ANTs tools
-- **Incremental Development**: Start with denoising, then add eddy correction, bias correction, and tensor fitting
-- **Extensible**: Nodes can be modified and extended later by editing Python code
+## Quick Start
 
-## Architecture
-
-The system consists of:
-- **ComfyUI Web Server**: Provides the interactive node-based interface
-- **Custom Nodes**: Python nodes that wrap neuroimaging tools
-- **BIDS Handler**: Utilities for reading/writing BIDS datasets
-- **System Executor**: Wrapper for executing commands using system-installed tools
+```bash
+./setup_local.sh    # first-time setup
+./run_diffyui.sh    # start server (DWI-only mode)
+```
 
 ## Prerequisites
 
-- Python 3.11 or higher
-- ComfyUI (will be installed by setup script)
-- **Neuroimaging tools installed on your system**:
-  - FSL (with `bet`, `fslroi`, `eddy` commands available in PATH)
-  - MRtrix3 (with `mrconvert`, `dwidenoise` commands available in PATH)
-  - ANTs (with `N4BiasFieldCorrection` command available in PATH)
-- BIDS-formatted dataset with `anat/` and `dwi/` folders
-- Sufficient disk space for processing outputs
-
-## Installation
-
-1. **Clone or download this repository**:
-   ```bash
-   cd /path/to/DiffyUI
-   ```
-
-2. **Run the setup script**:
-   ```bash
-   ./setup_local.sh
-   ```
-   
-   This will:
-   - Clone ComfyUI repository (if not already present)
-   - Install ComfyUI dependencies
-   - Install DWI node dependencies
-   - Create symlinks to custom nodes
-   - Verify neuroimaging tools are available
-
-3. **Start ComfyUI**:
-   ```bash
-   cd ComfyUI
-   python main.py --listen 0.0.0.0 --port 8188
-   ```
-   Or use the DiffyUI startup script for a DWI-focused UI (no image/video generation nodes):
-   ```bash
-   ./run_diffyui.sh
-   ```
-
-4. **Access ComfyUI**:
-   Open your browser and navigate to `http://localhost:8188`
-
-5. **Verify custom nodes are loaded**:
-   The DWI nodes should appear in the node menu under the "DWI" category.
-
-### Running DiffyUI without image/video generation
-
-To run DiffyUI with only DWI-related and essential nodes (no ComfyUI image/video generation):
-
-- **Recommended:** Start with the provided script:
-  ```bash
-  ./run_diffyui.sh
-  ```
-  This runs ComfyUI with `--disable-api-nodes` and `--diffyui-only`: API nodes (Sora, Runway, etc.) are not loaded, built-in extras are limited to Preview as Text and string/utils, and core diffusion nodes (samplers, checkpoint/VAE/CLIP loaders, latent/conditioning) are removed. Load Image, Save Image, Preview Image, and basic image passthrough nodes are kept for NIfTI preview and workflows.
-
-- **Manual:** From the `ComfyUI` directory:
-  ```bash
-  python main.py --listen 0.0.0.0 --port 8188 --disable-api-nodes --diffyui-only
-  ```
-  Use `--disable-api-nodes` alone if you only want to disable API nodes and keep the rest of the UI unchanged.
+- Python 3.11+
+- FSL (`bet`, `fslroi`, `eddy`, `dtifit`, `tbss_*` in PATH)
+- MRtrix3 (`mrconvert`, `dwidenoise`, `dwifslpreproc`, `mrregister` in PATH)
+- ANTs (`N4BiasFieldCorrection` in PATH)
+- BIDS-formatted dataset
 
 ## Project Structure
 
 ```
 DiffyUI/
-├── setup_local.sh              # Local installation script
-├── run_diffyui.sh              # Start ComfyUI in DWI-only mode (no image/video gen nodes)
-├── requirements.txt            # Python dependencies
-├── custom_nodes/               # ComfyUI custom nodes directory
-│   ├── dwi_nodes/              # DWI processing nodes
-│   │   ├── bids_loader.py          # BIDS dataset loader
-│   │   ├── subject_selector.py     # Subject selection by ID
-│   │   ├── subject_bucket.py       # Subject data container / pass-through validator
-│   │   ├── subject_iterator.py     # Manual index-based subject iterator
-│   │   ├── subject_batch_runner.py # Automatic sequential batch processing
-│   │   ├── brain_mask.py           # Brain mask extraction (FSL BET)
-│   │   ├── denoising.py            # Denoising node (MRtrix3)
-│   │   ├── eddy_correction.py      # Eddy correction (FSL)
-│   │   ├── bias_correction.py      # Bias correction (ANTs)
-│   │   ├── tensor_fitting.py       # Tensor fitting (legacy)
-│   │   ├── dtifit.py               # DTI fitting (FSL dtifit - comprehensive)
+├── setup_local.sh              # Installation script
+├── run_diffyui.sh              # Start server in DWI-only mode
+├── requirements.txt
+├── config/
+│   └── node_config.yml         # Default node parameters
+├── custom_nodes/
+│   ├── dwi_nodes/              # All DWI nodes (symlinked into ComfyUI)
+│   │   ├── bids_subject_type.py    # BIDS_SUBJECT bundle type + builder
+│   │   ├── bids_loader.py          # BIDS Project Loader (entry node)
+│   │   ├── subject_batch_runner.py # Sequential batch runner
+│   │   ├── workflow_packs.py       # DWIPreprocPack, DerivedFilePicker
+│   │   ├── brain_mask.py           # FSL BET
+│   │   ├── denoising.py            # MRtrix3 MP-PCA
+│   │   ├── extract_b0.py           # b0 extraction
+│   │   ├── topup_correction.py     # FSL topup
+│   │   ├── eddy_correction.py      # FSL eddy / eddy_cuda
+│   │   ├── bias_correction.py      # ANTs N4BiasFieldCorrection
+│   │   ├── dtifit.py               # FSL dtifit (FA, MD, MO, L1-3, V1-3, S0)
+│   │   ├── tractography.py         # MRtrix3 tckgen / FSL probtrackx2
+│   │   ├── nifti_preview.py        # 3-panel slice preview + FSLeyes button
+│   │   ├── brain_3d_viewer.py      # 3D mesh extraction (OBJ/STL)
+│   │   ├── nifti_stats.py          # fslstats / mrinfo text output
 │   │   ├── tbss_fa_collector.py    # Collect FA maps for TBSS
-│   │   ├── tbss_preproc.py         # TBSS step 1: preprocess FA
-│   │   ├── tbss_reg.py             # TBSS step 2: nonlinear registration
-│   │   ├── tbss_postreg.py         # TBSS step 3: apply warps, mean FA
-│   │   ├── tbss_prestats.py        # TBSS step 4: threshold skeleton, project FA
-│   │   ├── nifti_preview.py        # NIfTI preview + FSLeyes button + skeleton overlay
-│   │   └── web/
-│   │       └── nifti_preview.js    # Frontend: Open in FSLeyes button
-│   └── utils/                  # Utility modules
-│       ├── bids_handler.py     # BIDS format handling
-│       ├── system_executor.py  # FSL/MRtrix3/ANTs command executor
-│       ├── file_manager.py     # File I/O utilities
-│       └── cache_manager.py    # Node output caching
-└── examples/                   # Example workflow files
+│   │   ├── tbss_preproc.py         # tbss_1_preproc
+│   │   ├── tbss_reg.py             # tbss_2_reg
+│   │   ├── tbss_postreg.py         # tbss_3_postreg
+│   │   ├── tbss_prestats.py        # tbss_4_prestats
+│   │   ├── fba_prep.py             # FBA stage: copy inputs
+│   │   ├── fba_subject1.py         # FBA: upsample + response
+│   │   ├── fba_response_avg.py     # FBA: average response
+│   │   ├── fba_subject2.py         # FBA: FOD + normalise
+│   │   ├── fba_template_prep.py    # FBA: template prep
+│   │   ├── fba_template_build.py   # FBA: population template
+│   │   ├── fba_subject3a.py        # FBA: register + warp mask
+│   │   ├── fba_template_mask.py    # FBA: template mask
+│   │   ├── fba_subject3b.py        # FBA: fixels + FD + FC
+│   │   ├── fba_logfc_fdc.py        # FBA: log FC + FDC
+│   │   └── fba_group.py            # FBA: tractography + smooth
+│   └── utils/
+│       ├── bids_handler.py         # BIDS path resolution
+│       ├── system_executor.py      # subprocess wrapper (FSL/MRtrix3/ANTs)
+│       ├── file_manager.py         # File I/O helpers
+│       └── cache_manager.py        # Node output caching
+└── examples/
+    └── workflow_dwi_preprocess.json  # Canonical preprocessing workflow
 ```
 
-## Custom Nodes
+## Data Flow
 
-### BIDS Loader
-Loads BIDS-formatted datasets and provides access to DWI and anatomical files.
+All pipelines follow this pattern:
 
-### Subject Selector & Subject Bucket
-Organize and select individual subjects for processing.
+```
+BIDSProjectLoader
+    │  bids_dataset, subject_list
+    ▼
+SubjectBatchRunner ──────────────────────────── auto re-queues per subject
+    │  BIDS_SUBJECT (one subject bundle per run)
+    ▼
+DWIPreprocPack                    DerivedFilePicker (for derived outputs)
+    │  subject_id, dwi_ap/pa,         │  subject_id, file_path
+    │  bvec/bval, t1w                 │
+    ▼                                 ▼
+BrainMask → Denoise → ExtractB0     TBSSFACollector → TBSS 1-4
+    → Topup → Eddy → BiasCorrection     or FBA chain
+    → DTIfit (FA, MD, L1-3, V1-3…)
+```
 
-### Subject Batch Runner
-Automatically processes all subjects sequentially without manual intervention. Maintains state in `~/.diffyui/batch_state.json` and re-queues the workflow via the ComfyUI HTTP API after each subject completes. State auto-resets when the subject list changes. Toggle `reset_batch` to restart from subject 0.
+Outputs are always written to `<bids_root>/derivatives/diffyui/<subject_id>/`.
 
-### DWI Brain Mask
-Extracts brain mask from DWI data using FSL BET on the b0 volume.
+## Node Reference
 
-### DWI Denoise
-Denoise DWI data using MRtrix3's MP-PCA denoising algorithm.
+### Entry Nodes
 
-### DWI Eddy Correction
-Correct for eddy currents and motion using FSL eddy.
+**BIDS Project Loader** (`BIDSLoader`)
+Scans a BIDS dataset root. Shows project name, subject count, sessions, and per-subject completion status.
+Outputs: `bids_dataset` (STRING), `subject_list` (STRING, comma-separated).
 
-### DWI Bias Correction
-Correct bias field using ANTs N4BiasFieldCorrection.
+**Subject Batch Runner** (`SubjectBatchRunner`)
+Processes subjects one at a time. On each run it emits a `BIDS_SUBJECT` bundle for the current subject, saves state to `~/.diffyui/batch_state.json`, and re-queues the workflow for the next subject automatically — before downstream nodes run, so a failure in one subject doesn't stop the batch.
 
-### DWI Tensor Fitting
-Fit diffusion tensor model (DTI) to DWI data using FSL or MRtrix3.
+Key options:
+- `completion_check` — glob relative to `derivatives/diffyui/{subject}/`; matching subjects are skipped (e.g. `dwi/DTI/*_FA.nii.gz`)
+- `skip_completed` — toggle skip on/off
+- `reset_batch` — toggle to restart from subject 0
 
-### DTIfit (FSL)
-Comprehensive FSL dtifit wrapper with all standard outputs (FA, MD, MO, L1/L2/L3, V1/V2/V3, S0). Supports weighted least squares, tensor saving, SSE output, and gradient nonlinearity correction.
+Outputs: `subject` (BIDS_SUBJECT), `subject_id`, `current_index`, `total_subjects`, `batch_report`.
 
-### DTIfit (FSL)
-Comprehensive FSL dtifit wrapper with all standard outputs (FA, MD, MO, L1/L2/L3, V1/V2/V3, S0). Supports weighted least squares, tensor saving, SSE output, and gradient nonlinearity correction.
+### Workflow Pack Nodes
 
-### NIfTI Preview
-Preview NIfTI files with 3-panel views (axial, coronal, sagittal). Includes an **Open in FSLeyes** button that launches FSLeyes with the current file after the node has executed. When the filename contains `skeleton`, the preview automatically renders a green overlay on the skull-stripped MNI152 T1 1mm brain template (`MNI152_T1_1mm_brain.nii.gz` from `$FSLDIR/data/standard/`).
+**DWI Preproc Pack** (`DWIPreprocPack`)
+Unpacks a `BIDS_SUBJECT` into the individual file paths the preprocessing pipeline needs.
+Outputs: `subject_id`, `dwi_ap`, `bvec_ap`, `bval_ap`, `dwi_pa`, `bvec_pa`, `bval_pa`, `t1w`.
+PA phase outputs are empty strings when no reverse-phase data exists.
 
-### Brain 3D Viewer
-Converts a brain NIfTI (e.g. from DWI Brain Mask) into a 3D mesh (OBJ or STL) using marching cubes and writes it to `output/3d/` and to `input/3d/brain_mesh_preview.{obj|stl}`. **Connect its `mesh_path` output to "Preview 3D & Animation" (3d category)** so the node runs and the mesh is shown. Use **"Queue Prompt"** (main run button) to run the full workflow; if you use "Run this node" on another branch only, the 3D branch will not run. If you use "Load 3D & Animation" instead, refresh the page after running once so the dropdown lists `3d/brain_mesh_preview.obj`.
+**Derived File Picker** (`DerivedFilePicker`)
+Picks a processed file from `derivatives/diffyui/{subject}/` using a glob pattern. Use this to feed downstream workflows that need outputs from a previous pipeline stage.
+Input: `subject` (BIDS_SUBJECT), `file_pattern` (glob, e.g. `dwi/DTI/*_FA.nii.gz`).
+Outputs: `subject_id`, `file_path`.
 
-**If the mesh opens in Meshlab but not in the ComfyUI interface:** the in-browser 3D viewer may support OBJ more reliably than STL. Use **output format "obj"** (default) for the Preview 3D panel. The files are valid either way; you can still open the STL in Meshlab from `ComfyUI/input/brain_mesh_preview.stl` or `output/3d/`.
+### Preprocessing Nodes (DWI/Preprocessing)
 
-**Preview 3D node looks empty but the mesh appears in the Assets tab:** Yes, it’s weird — the node that’s supposed to show the 3D preview doesn’t show it inline, while the same result appears in the Assets/Preview tab. The backend sends the same data (the `model_file` path) in both cases; the ComfyUI frontend is what decides where to render the 3D viewer. Right now it appears to draw the 3D view in the Assets area but not inside the Preview 3D & Animation node box. So this is a **frontend/UX limitation**, not an issue with our node or path. Workaround: use the **Assets** (or Preview) tab and open the 3D asset there (e.g. zoom in) to view the brain. A proper fix would be in the ComfyUI client so that the Preview 3D node’s inline widget shows the same 3D view.
-
-**Brain orientation looks tilted:** NIfTI uses RAS (Z = superior); most 3D UIs use **Y-up**. Use the node option **viewer_up: "Y-up (ComfyUI / standard 3D)"** (default) so the brain is exported right-way-up. You can also try the viewer’s **Up Direction** (e.g. Y, Z, or Original) if you keep **viewer_up: "RAS (no change)"**.
-
-### TBSS Pipeline
-Five nodes implement FSL's Tract-Based Spatial Statistics workflow:
-
-| Node | FSL command | Key outputs |
+| Node | Tool | Key outputs |
 |---|---|---|
-| TBSS FA Collector | — | `fa_directory` (symlinks FA maps) |
-| TBSS 1 Preproc | `tbss_1_preproc` | `project_dir` |
-| TBSS 2 Reg | `tbss_2_reg` | `project_dir` |
-| TBSS 3 Postreg | `tbss_3_postreg` | `project_dir`, `mean_fa_path`, `mean_fa_skeleton_path` |
-| TBSS 4 Prestats | `tbss_4_prestats` | `project_dir`, `all_fa_skeletonised_path`, `mean_fa_skeleton_path` |
+| DWI Brain Mask | FSL BET | `brain_mask`, `extracted_brain` |
+| DWI Denoise | MRtrix3 dwidenoise | `denoised_dwi`, `noise_map` |
+| Extract B0 | MRtrix3 / fslroi | `b0_image` |
+| DWI Topup Correction | FSL topup | `fieldmap`, `corrected_b0` |
+| DWI Eddy Correction | FSL eddy / eddy_cuda | `dwi_corrected`, `bvec_corrected` |
+| DWI Bias Correction | ANTs N4 | `corrected_dwi` |
+| DTIfit (FSL) | FSL dtifit | `fa_map`, `md_map`, `mo_map`, `l1/l2/l3`, `v1/v2/v3`, `s0`, `fa_directory` |
 
-Connect them in sequence: FA Collector → TBSS 1 → TBSS 2 → TBSS 3 → TBSS 4. All nodes cache their outputs and detect upstream errors to avoid cascading failures. TBSS 2 Reg handles partial re-runs gracefully (detects completed warp files and skips re-registration).
+Eddy correction automatically uses `eddy_cuda` (GPU) when available, falling back to `eddy_cpu`. Before launching eddy_cuda, the node unloads ComfyUI models from GPU memory to avoid CUDA contention.
 
-### NIfTI Stats
-Runs **fslstats** (FSL) or **mrinfo** (MRtrix) on an input NIfTI image and outputs **structured text** with common metrics and stats (e.g. mean, std, min, max, volume, dimensions). The output is LLM-friendly (markdown-style key-value) and can be connected to **Preview as Text** (utils category) to view, or fed to an LLM downstream. Input: **image** (path to .nii or .nii.gz). Optional: **tool** (fslstats or mrinfo).
+### Tractography (DWI)
 
-## Usage
+**DWI Tractography** (`DWITractography`)
+Whole-brain fiber tracking using MRtrix3 `tckgen` (probabilistic or deterministic) or FSL `probtrackx2`.
+Outputs: `tractography_file`, `connectivity_matrix`.
 
-### Basic Workflow
+### QC / Visualisation (DWI)
 
-1. **Start ComfyUI**:
-   ```bash
-   cd ComfyUI
-   python main.py --listen 0.0.0.0 --port 8188
-   ```
+**NIfTI Preview** — 3-panel PNG (axial/coronal/sagittal). Shows preview inline. Includes an **Open in FSLeyes** button. When the filename contains `skeleton`, renders a green overlay on the MNI152 brain template.
 
-2. **Open ComfyUI**: Navigate to `http://localhost:8188`
+**Brain 3D Mesh** — Extracts a 3D mesh (OBJ or STL) via marching cubes. Connect `mesh_path` to ComfyUI's "Preview 3D & Animation" node to view.
 
-3. **Load a workflow**: Use the example workflows in the `examples/` directory, or build your own
+**NIfTI Stats** — Runs `fslstats` or `mrinfo` and outputs structured key-value text. Useful for QC checks or feeding text to downstream logic.
 
-4. **Configure nodes**:
-   - Use BIDS Loader to select your dataset
-   - Connect Subject Selector to get individual subject files
-   - Add processing nodes (Brain Mask, Denoise, etc.)
-   - Configure node parameters as needed
+### TBSS Pipeline (DWI/TBSS)
 
-5. **Run the workflow**: Click "Queue Prompt" to execute
+TBSS works at the project level (all subjects at once), not per-subject:
 
-### Example: Brain Mask Extraction
+```
+TBSSFACollector → TBSS1Preproc → TBSS2Reg → TBSS3Postreg → TBSS4Prestats
+```
 
-1. Add a "BIDS Loader" node and set the dataset path
-2. Add a "Subject Selector" node connected to BIDS Loader
-3. Add a "Subject Bucket" node connected to Subject Selector
-4. Add a "DWI Brain Mask" node connected to Subject Bucket's AP phase DWI output
-5. Add a "NIfTI Preview" node to preview the mask
-6. Run the workflow
+Feed `bids_dataset` and `subject_list` from `BIDSProjectLoader` directly into `TBSSFACollector`. Use `DerivedFilePicker` to supply FA maps if running after the DTI preprocessing batch.
 
-## Data Organization
+### FBA Pipeline (DWI/FBA)
 
-The system expects BIDS-formatted datasets with the following structure:
+11 nodes implement fixel-based analysis — run per-subject first, then group-level:
+
+**Per-subject:** `FBAPrep → FBASubject1 → FBAResponseAvg → FBASubject2 → FBASubject3a → FBASubject3b → FBALogFCFDC`
+
+**Group-level:** `FBATemplatePrep → FBATemplateBuild → FBATemplateMask → FBAGroup`
+
+## BIDS_SUBJECT Type
+
+`BIDS_SUBJECT` is DiffyUI's internal bundle type — a Python dict carrying all BIDS paths for one subject:
+
+```python
+{
+    "bids_root":        "/path/to/dataset",
+    "subject_id":       "sub-001",
+    "session_id":       "ses-01",    # or None
+    "sessions":         ["ses-01"],  # all sessions found
+    "files": {
+        "dwi_ap":  "...", "bvec_ap": "...", "bval_ap": "...",
+        "dwi_pa":  "...", "bvec_pa": "...", "bval_pa": "...",
+        "t1w":     "...",
+    },
+    "derivatives_root": "/path/to/dataset/derivatives/diffyui/sub-001",
+}
+```
+
+It is built automatically by `SubjectBatchRunner` and flows through pack nodes to unpack into individual file paths for the processing nodes.
+
+## BIDS Dataset Structure
 
 ```
 bids_dataset/
-├── sub-01/
+├── dataset_description.json
+├── sub-001/
 │   ├── anat/
-│   │   └── sub-01_T1w.nii.gz
+│   │   └── sub-001_T1w.nii.gz
 │   └── dwi/
-│       ├── sub-01_dir-AP_dwi.nii.gz
-│       ├── sub-01_dir-AP_dwi.bval
-│       ├── sub-01_dir-AP_dwi.bvec
-│       ├── sub-01_dir-PA_dwi.nii.gz
-│       ├── sub-01_dir-PA_dwi.bval
-│       └── sub-01_dir-PA_dwi.bvec
-└── sub-02/
+│       ├── sub-001_dir-AP_dwi.nii.gz
+│       ├── sub-001_dir-AP_dwi.bval
+│       ├── sub-001_dir-AP_dwi.bvec
+│       ├── sub-001_dir-PA_dwi.nii.gz
+│       ├── sub-001_dir-PA_dwi.bval
+│       └── sub-001_dir-PA_dwi.bvec
+└── sub-002/
     └── ...
 ```
 
-Outputs are written to the `derivatives/diffyui/` directory within the BIDS dataset.
+Sessions (`sub-001/ses-01/dwi/`) are detected automatically.
 
-## Modifying Nodes
+Outputs are written to `bids_dataset/derivatives/diffyui/<subject_id>/`.
 
-Nodes can be extended and modified by editing the Python files in `custom_nodes/dwi_nodes/`. After making changes:
+## Adding a New Node
 
-1. Restart ComfyUI
-2. The changes will be reflected in the web interface
-
-You can:
-- Add new input parameters
-- Modify output types
-- Change processing logic
-- Add validation or error handling
+1. Create `custom_nodes/dwi_nodes/my_node.py` — define `INPUT_TYPES`, `RETURN_TYPES`, `RETURN_NAMES`, `FUNCTION`, `CATEGORY`.
+2. Accept `BIDS_SUBJECT` input if the node needs per-subject files; use `DerivedFilePicker` logic to look up derived outputs.
+3. Use `system_executor.py` for all external tool calls.
+4. Write outputs under `derivatives/diffyui/<subject_id>/` via `bids_handler.py`.
+5. Register the class in `custom_nodes/dwi_nodes/__init__.py` (both `NODE_CLASS_MAPPINGS` and `NODE_DISPLAY_NAME_MAPPINGS`).
+6. Restart the server.
 
 ## Troubleshooting
 
-### Tools not found
-- Verify tools are installed: `which bet fslroi mrconvert dwidenoise N4BiasFieldCorrection`
-- Ensure tools are in your system PATH
-- For FSL, ensure FSLDIR environment variable is set if needed
+**Tools not found** — verify PATH: `which bet fslroi mrconvert dwidenoise N4BiasFieldCorrection`
 
-### Nodes not appearing
-- Verify custom_nodes directory symlinks are correct
-- Check ComfyUI logs for import errors
-- Ensure all dependencies are installed: `pip install -r requirements.txt`
+**Nodes not appearing** — check the server startup log (`/tmp/diffyui_*.log`) for import errors; ensure `ComfyUI/custom_nodes` symlink points to `<project>/custom_nodes`.
 
-### Processing errors
-- Check ComfyUI console output for error messages
-- Verify input files exist and are in correct format
-- Check BIDS structure is valid
-- Ensure file permissions allow reading/writing
+**Batch stops after one subject** — check `~/.diffyui/batch_state.json`; toggle `reset_batch` to True then False to restart; ensure `auto_queue` is True.
 
-### Eddy correction performance
-- **GPU acceleration**: The Eddy correction node automatically uses `eddy_cuda` (GPU) when available, falling back to `eddy_cpu` if not found.
-- **GPU memory management**: Before running `eddy_cuda`, the node automatically frees GPU memory by unloading ComfyUI models. This prevents GPU contention between ComfyUI's PyTorch backend and FSL's CUDA processes.
-- **Performance optimizations**: The node enables FSL eddy performance flags for CUDA:
-  - `--dont_sep_offs_move`: Faster processing with minimal quality impact
-  - `--nvoxhp=1000`: Reduced hyperparameter voxels (faster, good for most data)
-  - `--dont_peas`: Skips post-eddy alignment for single-shell data
-  - Multi-threaded I/O: Sets `OMP_NUM_THREADS=4` for faster file operations
-- **Normal behavior**: After initial GPU compute, eddy becomes I/O bound (disk reading/writing). You'll see GPU usage drop to <10% and single CPU core active - this is normal FSL behavior during the I/O phase.
-- **Further optimization**: For fastest performance, consider:
-  - Using SSD/NVMe storage for output directory
-  - Using tmpfs/RAM disk: `sudo mount -t tmpfs -o size=50G tmpfs /path/to/tmpdir` (adjust size based on RAM)
-  - Ensuring no other disk-intensive processes are running
-- **Check binary used**: The node logs which eddy binary it selected. Look for `[DWI Eddy] Using eddy binary:` in the console.
-
-### FSL environment issues
-- The executor automatically sets up FSL environment variables
-- If issues persist, ensure FSLDIR is set: `export FSLDIR=/usr/share/fsl`
-
-## Development
-
-### Adding New Nodes
-
-1. Create a new Python file in `custom_nodes/dwi_nodes/`
-2. Follow the pattern from existing nodes
-3. Register in `custom_nodes/dwi_nodes/__init__.py`
-4. Restart ComfyUI
-
-### Testing
-
-Test nodes incrementally:
-1. Start with BIDS Loader and Subject Selector
-2. Test with a small dataset
-3. Verify outputs
-4. Move to processing nodes
-
-## License
-
-[Specify your license here]
-
-## Contributing
-
-[Contributing guidelines if applicable]
-
-## Support
-
-[Support information]
+**Eddy runs slowly** — expected after initial GPU compute; eddy becomes I/O-bound during file writing. Use SSD/NVMe storage for derivatives.
 
 ## Acknowledgments
 
-- ComfyUI for the excellent node-based framework
-- FSL, MRtrix3, and ANTs teams for the neuroimaging tools
-- BIDS community for data organization standards
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI) — node-based workflow engine
+- [FSL](https://fsl.fmrib.ox.ac.uk/) — BET, eddy, dtifit, TBSS
+- [MRtrix3](https://www.mrtrix.org/) — dwidenoise, tckgen, fixel-based analysis
+- [ANTs](https://stnava.github.io/ANTs/) — N4BiasFieldCorrection
+- [BIDS](https://bids.neuroimaging.io/) — data organisation standard
